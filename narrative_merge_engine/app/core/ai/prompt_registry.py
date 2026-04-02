@@ -1,8 +1,10 @@
 """
 Prompt Registry — centralised store for all LLM prompt templates.
 
-Prompts are versioned strings kept here (or loaded from disk/DB).
+Prompts are versioned strings kept here (or loaded from dedicated prompt files).
 Services reference prompts by key, never inline them.
+
+Template variables use Python's `string.Template` syntax: $variable_name
 """
 
 from __future__ import annotations
@@ -10,13 +12,20 @@ from __future__ import annotations
 from string import Template
 from typing import Any
 
+# Import dedicated prompt modules
+from app.core.ai.prompts.event_extraction_v2 import (
+    EVENT_EXTRACTION_SYSTEM_PROMPT,
+    EVENT_EXTRACTION_USER_PROMPT,
+)
+
 
 class PromptRegistry:
     """
     Manages versioned prompt templates.
 
     Usage:
-        prompt = registry.render("event_extraction_v1", testimony_text="...")
+        prompt = registry.render("event_extraction_v2", testimony_text="...")
+        system = registry.get_system_prompt("event_extraction_v2")
     """
 
     _templates: dict[str, str] = {
@@ -27,13 +36,16 @@ class PromptRegistry:
             "TESTIMONY:\n$testimony_text\n\nSUMMARY:"
         ),
 
-        # ── Event extraction ─────────────────────────────────────────────
+        # ── Event extraction (LEGACY — use v2 for production) ────────────
         "event_extraction_v1": (
             "Extract discrete events from the testimony below. "
             "Return a JSON array of objects with keys: "
             "id, description, timestamp_hint, participants, location, confidence.\n\n"
             "TESTIMONY:\n$testimony_text\n\nEVENTS JSON:"
         ),
+
+        # ── Event extraction v2 (production prompt) ──────────────────────
+        "event_extraction_v2": EVENT_EXTRACTION_USER_PROMPT,
 
         # ── Timeline reconstruction ──────────────────────────────────────
         "timeline_alignment_v1": (
@@ -69,10 +81,19 @@ class PromptRegistry:
         ),
     }
 
+    # System prompts live separately — not all tasks need one
+    _system_prompts: dict[str, str] = {
+        "event_extraction_v2": EVENT_EXTRACTION_SYSTEM_PROMPT,
+    }
+
     def get(self, key: str) -> str:
         if key not in self._templates:
             raise KeyError(f"Prompt template '{key}' not found in registry.")
         return self._templates[key]
+
+    def get_system_prompt(self, key: str) -> str | None:
+        """Return the system prompt for a given task key, or None."""
+        return self._system_prompts.get(key)
 
     def render(self, key: str, **variables: Any) -> str:
         """Render a prompt template with the given variables."""
@@ -84,6 +105,12 @@ class PromptRegistry:
         if key in self._templates and not overwrite:
             raise ValueError(f"Prompt '{key}' already exists. Pass overwrite=True to replace.")
         self._templates[key] = template
+
+    def register_system_prompt(self, key: str, prompt: str, *, overwrite: bool = False) -> None:
+        """Register a system prompt for a task key."""
+        if key in self._system_prompts and not overwrite:
+            raise ValueError(f"System prompt '{key}' already exists.")
+        self._system_prompts[key] = prompt
 
     def list_keys(self) -> list[str]:
         return list(self._templates.keys())
