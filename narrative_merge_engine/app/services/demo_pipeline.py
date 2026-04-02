@@ -255,7 +255,7 @@ class DemoPipeline:
         if fast_preview:
             # ── Fast path: skip timeline reasoning ───────────────────────────
             result.timeline = _build_trivial_timeline(all_events)
-            result.conflicts = StrictConflictResult().model_dump()
+            result.conflicts = _strict_result_to_dict(StrictConflictResult())
             result.errors.append("fast_preview: timeline reasoning and conflict detection skipped.")
             if result.status == PipelineStatus.SUCCESS:
                 result.status = PipelineStatus.PARTIAL
@@ -295,7 +295,7 @@ class DemoPipeline:
             conflict_result = StrictConflictResult()
             result.errors.append("No branches available for conflict detection.")
 
-        result.conflicts = conflict_result.model_dump()
+        result.conflicts = _strict_result_to_dict(conflict_result)
 
         # ── Finalize ─────────────────────────────────────────────────────────
         total_ms = round((time.monotonic() - pipeline_start) * 1000, 1)
