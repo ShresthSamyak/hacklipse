@@ -51,6 +51,7 @@ _FAST_LLM_TASK_PREFIXES: tuple[str, ...] = (
     "question_generation",
     "testimony_summary",
     "narrative_merge",
+    "testimony_analysis",
 )
 
 # These task names are ALWAYS routed to the primary LLM (never downgraded).
@@ -71,6 +72,7 @@ _JSON_MODE_TASKS: frozenset[str] = frozenset({
     "conflict_detection_v2",
     "conflict_detection_strict",
     "question_generation_v1",
+    "testimony_analysis_v2",
 })
 
 

@@ -64,10 +64,12 @@ from app.models.schemas.timeline_reconstruction import (
     TimelineEvent,
     TimelineReconstructionResult,
 )
+from app.models.schemas.testimony_analysis import TestimonyAnalysisResult
 from app.services.conflict_detection_service import ConflictDetectionService
 from app.services.event_extraction_service import EventExtractionService
 from app.services.speech_to_text_service import SpeechToTextService, TranscriptResult
 from app.services.timeline_reconstruction_service import TimelineReconstructionService
+from app.services.testimony_analysis_service import analyze_testimony_sensitivity
 
 logger = get_logger(__name__)
 
@@ -104,6 +106,7 @@ class PipelineResult:
 
     # Stage outputs
     transcript: str = ""
+    testimony_analysis: dict = field(default_factory=dict)
     events: list[dict] = field(default_factory=list)
     timeline: dict = field(default_factory=dict)
     conflicts: dict = field(default_factory=dict)
@@ -120,6 +123,7 @@ class PipelineResult:
         return {
             "pipeline_id": self.pipeline_id,
             "transcript": self.transcript,
+            "testimony_analysis": self.testimony_analysis,
             "events": self.events,
             "timeline": self.timeline,
             "conflicts": self.conflicts,
@@ -405,10 +409,25 @@ class DemoPipeline:
         """Stage 2: extract events. Falls back to minimal single event on failure."""
         stage_start = time.monotonic()
 
+        # Phase 1.5: Testimony Analysis
+        testimony_analysis = None
+        try:
+            testimony_analysis = await asyncio.wait_for(
+                analyze_testimony_sensitivity(text), timeout=15
+            )
+            
+            # Surface it to the pipeline result if empty, or dict merge/overwrite (we keep first)
+            if not result.testimony_analysis:
+               result.testimony_analysis = testimony_analysis.model_dump()
+               
+        except Exception as exc:
+            logger.warning("Testimony analysis failed, proceeding without context", error=str(exc))
+            result.errors.append(f"Testimony analysis failed: {exc}")
+
         for attempt in range(_MAX_TIMEOUT_RETRIES + 1):
             try:
                 extraction: ExtractionResult = await asyncio.wait_for(
-                    self._event_svc.extract_events_from_text(text),
+                    self._event_svc.extract_events_from_text(text, testimony_analysis=testimony_analysis),
                     timeout=_TIMEOUT_EXTRACTION,
                 )
                 elapsed = round((time.monotonic() - stage_start) * 1000, 1)

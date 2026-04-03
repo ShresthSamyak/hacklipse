@@ -130,12 +130,33 @@ def _make_pipeline(
         return_value=TranscriptResult(text=stt_text, detected_language="en")
     )
 
-    return DemoPipeline(
+    pipeline = DemoPipeline(
         event_svc=event_svc,
         timeline_svc=timeline_svc,
         conflict_svc=conflict_svc,
         stt_svc=stt_svc,
     )
+
+    # Patch the standalone function natively within the DemoPipeline namespace
+    # since it is imported and used directly without DI in the current structure
+    patcher = patch(
+        "app.services.demo_pipeline.analyze_testimony_sensitivity",
+        new_callable=AsyncMock
+    )
+    mock_analyze = patcher.start()
+    
+    # Needs to return a TestimonyAnalysisResult schema instead of None
+    from app.models.schemas.testimony_analysis import TestimonyAnalysisResult, EmotionCategory, ConfidenceLevel
+    mock_analyze.return_value = TestimonyAnalysisResult(
+        emotion=EmotionCategory.NEUTRAL,
+        uncertainty_signals=[],
+        confidence_level=ConfidenceLevel.MEDIUM
+    )
+
+    import atexit
+    atexit.register(patcher.stop)
+
+    return pipeline
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -343,7 +364,7 @@ class TestMultiWitnessExtraction:
     async def test_both_branches_extracted_concurrently(self):
         call_log: list[str] = []
 
-        async def extraction_side_effect(text: str) -> ExtractionResult:
+        async def extraction_side_effect(text: str, **kwargs) -> ExtractionResult:
             call_log.append(text[:20])
             await asyncio.sleep(0)  # yield to event loop
             return _make_extraction_result(_make_event(f"event from: {text[:20]}"))
@@ -367,7 +388,7 @@ class TestMultiWitnessExtraction:
     async def test_single_branch_failure_does_not_cancel_sibling(self):
         call_count = 0
 
-        async def extraction_side_effect(text: str) -> ExtractionResult:
+        async def extraction_side_effect(text: str, **kwargs) -> ExtractionResult:
             nonlocal call_count
             call_count += 1
             if "B" in text or "suspect" in text:

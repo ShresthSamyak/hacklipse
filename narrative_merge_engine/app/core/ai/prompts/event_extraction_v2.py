@@ -162,6 +162,12 @@ EXAMPLE OUTPUT 2:
 
 ─── NOW EXTRACT FROM THIS TESTIMONY ──────────────────────────────────────────
 
+WITNESS CONTEXT (Pre-analyzed markers to guide extraction):
+- Detected Emotion: $witness_emotion
+- Detected Uncertainty Signals: $witness_uncertainty_signals
+- Base Confidence Level: $witness_confidence
+(Note: Use this context to properly calibrate the 'confidence' and 'time_uncertainty' fields below, but do not let it override factual timelines if stated explicitly).
+
 TESTIMONY:
 $testimony_text
 

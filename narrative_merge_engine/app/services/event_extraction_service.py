@@ -71,6 +71,7 @@ from app.models.schemas.event_extraction import (
     ExtractionResult,
     UncertaintyType,
 )
+from app.models.schemas.testimony_analysis import TestimonyAnalysisResult
 from app.repositories.entity_repos import EventRepository
 from app.repositories.testimony_repo import TestimonyRepository
 
@@ -404,10 +405,15 @@ class EventExtractionService:
             },
         )
 
-    async def extract_events_from_text(self, text: str) -> ExtractionResult:
+    async def extract_events_from_text(
+        self, 
+        text: str, 
+        testimony_analysis: TestimonyAnalysisResult | None = None
+    ) -> ExtractionResult:
         """
         Extract events from raw text WITHOUT persisting to DB.
         Useful for previewing / testing the extraction pipeline.
+        Optionally uses testimony_analysis context for higher fidelity.
         """
         start_time = time.monotonic()
 
@@ -424,6 +430,7 @@ class EventExtractionService:
                 original_full_text=normalised_text,
                 chunk_index=chunk_index,
                 total_chunks=len(chunks),
+                testimony_analysis=testimony_analysis,
             )
             all_events.extend(events)
             total_raw_count += raw_count
@@ -465,6 +472,7 @@ class EventExtractionService:
         original_full_text: str,
         chunk_index: int,
         total_chunks: int,
+        testimony_analysis: TestimonyAnalysisResult | None = None,
     ) -> tuple[list[ExtractedEvent], int, int, dict[str, Any]]:
         """
         Extract events from a single text chunk.
@@ -486,6 +494,7 @@ class EventExtractionService:
                     chunk_text=chunk_text,
                     original_full_text=original_full_text,
                     is_retry=attempt > 0,
+                    testimony_analysis=testimony_analysis,
                 )
 
                 meta.update(llm_meta)
@@ -531,6 +540,7 @@ class EventExtractionService:
         chunk_text: str,
         original_full_text: str,
         is_retry: bool,
+        testimony_analysis: TestimonyAnalysisResult | None = None,
     ) -> tuple[list[ExtractedEvent], int, int, dict[str, Any]]:
         """
         Single LLM call → parse → validate → post-process.
@@ -540,7 +550,18 @@ class EventExtractionService:
         """
         # ── Build prompt ─────────────────────────────────────────────────
         prompt_key = "event_extraction_v2"
-        user_prompt = prompt_registry.render(prompt_key, testimony_text=chunk_text)
+        
+        prompt_kwargs = {"testimony_text": chunk_text}
+        if testimony_analysis:
+            prompt_kwargs["witness_emotion"] = testimony_analysis.emotion.value
+            prompt_kwargs["witness_uncertainty_signals"] = ", ".join(testimony_analysis.uncertainty_signals) if testimony_analysis.uncertainty_signals else "None explicitly detected"
+            prompt_kwargs["witness_confidence"] = testimony_analysis.confidence_level.value
+        else:
+            prompt_kwargs["witness_emotion"] = "unknown"
+            prompt_kwargs["witness_uncertainty_signals"] = "unknown"
+            prompt_kwargs["witness_confidence"] = "unknown"
+
+        user_prompt = prompt_registry.render(prompt_key, **prompt_kwargs)
         system_prompt = prompt_registry.get_system_prompt(prompt_key)
 
         if is_retry:

@@ -29,6 +29,8 @@ from app.core.ai.prompts.conflict_detection_strict import (
     CONFLICT_STRICT_SYSTEM_PROMPT,
     CONFLICT_STRICT_USER_PROMPT,
 )
+from app.core.ai.prompts.testimony_analysis_v2 import PROMPT_TEMPLATE as TESTIMONY_ANALYSIS_V2_PROMPT
+
 
 
 class PromptRegistry:
@@ -41,7 +43,9 @@ class PromptRegistry:
     """
 
     _templates: dict[str, str] = {
-        # ── Testimony ingestion ───────────────────────────────────────────
+        # ── Testimony Ingestion / Analysis ───────────────────────────────────
+        "testimony_analysis_v2": TESTIMONY_ANALYSIS_V2_PROMPT,
+
         "testimony_summary_v1": (
             "You are an expert analyst. Summarise the following witness testimony "
             "into a concise paragraph, preserving all factual claims.\n\n"

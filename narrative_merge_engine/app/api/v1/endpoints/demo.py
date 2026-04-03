@@ -66,6 +66,7 @@ class PipelineResponse(BaseModel):
     """Structured demo pipeline response."""
     pipeline_id: str
     transcript: str
+    testimony_analysis: dict | None = None
     events: list[dict]
     timeline: dict
     conflicts: dict
