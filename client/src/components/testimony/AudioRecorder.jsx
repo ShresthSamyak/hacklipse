@@ -73,6 +73,7 @@ export default function AudioRecorder({ waveSize = 'sm', onAudioReady }) {
     if (file) {
       const url = URL.createObjectURL(file)
       setAudioUrl(url)
+      if (onAudioReady) onAudioReady(file)
     }
   }
 

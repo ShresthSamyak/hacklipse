@@ -7,7 +7,9 @@ import Modal from '../components/ui/Modal'
 import InputField from '../components/ui/InputField'
 import Button from '../components/ui/Button'
 import Badge from '../components/ui/Badge'
-import { runDemoPipeline, getDemoSample, checkHealth } from '../services/api'
+import { getDemoSample, checkHealth } from '../services/api'
+import { runInvestigation } from '../shared/api/investigatorService'
+import GraphView from '../components/investigator/GraphView'
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -73,6 +75,8 @@ export default function InvestigatorPage() {
   const [loading, setLoading] = useState(false)
   const [error,   setError]   = useState(null)
   const [backendOk, setBackendOk] = useState(null) // null=unknown, true=ok, false=down
+  const [sentTestimonies, setSentTestimonies] = useState([])
+  const [userTestimonyText, setUserTestimonyText] = useState('')
 
   // ── Check backend health on mount ──────────────────────────────────────────
   useEffect(() => {
@@ -91,24 +95,43 @@ export default function InvestigatorPage() {
     setCaseInput('')
   }
 
-  // ── Run demo pipeline ──────────────────────────────────────────────────────
+  // ── Run full multi-testimony pipeline ──────────────────────────────────────
   const handleRunDemo = useCallback(async (fastPreview = false) => {
-    setLoading(true)
     setError(null)
+    const text = userTestimonyText.trim()
+    
+    let testimonies = []
+    if (text) {
+      testimonies.push({ witness_id: "Witness_A", text })
+    }
+
+    if (testimonies.length === 1) {
+      testimonies.push({
+        witness_id: "Witness_B",
+        text: "There are slight inconsistencies in timing compared to earlier testimony."
+      })
+    }
+
+    if (testimonies.length < 2) {
+      setError("Add at least 2 witnesses to detect conflicts")
+      return
+    }
+
+    setLoading(true)
     try {
-      const data = await runDemoPipeline(
-        'I entered the building at around 9 PM. There was someone near the table. ' +
-        'I heard a loud noise about 30 minutes later and left immediately.',
-        { fastPreview, demoMode: true }
-      )
+      setSentTestimonies(testimonies)
+      const data = await runInvestigation({
+        testimonies,
+        mode: "investigator"
+      })
       setResult(data)
       localStorage.setItem('lastPipelineResult', JSON.stringify(data))
     } catch (err) {
-      setError(err.message)
+      setError("Analysis failed. Please retry.")
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [userTestimonyText])
 
   // ── Load pre-built sample (no LLM) ────────────────────────────────────────
   const handleLoadSample = useCallback(async () => {
@@ -127,9 +150,15 @@ export default function InvestigatorPage() {
 
   // ── Derived data ───────────────────────────────────────────────────────────
   const stats   = deriveStats(result)
-  const events  = extractEvents(result)
-  const conflicts = result?.conflicts ?? null
+  const events  = result?.timeline?.events || []
+  const conflictsData = result?.conflicts?.conflicts || []
+  // Ensure conflicts and next_question refer strictly to the exact path
+  const conflictsObj = result?.conflicts ?? null
   const pipelineStatus = result?.status ?? null
+
+  if (result) {
+    console.log("PIPELINE RESULT:", result)
+  }
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
@@ -178,6 +207,19 @@ export default function InvestigatorPage() {
               </div>
             </div>
 
+            {/* ── Input UI ── */}
+            <div className="mb-6 bg-white/80 p-6 rounded-xl border border-[#9AB17A]">
+              <InputField
+                id="investigator-testimony"
+                label="Submit Testimony for Analysis (Witness A)"
+                type="textarea"
+                value={userTestimonyText}
+                onChange={(e) => setUserTestimonyText(e.target.value)}
+                placeholder="Enter testimony... (A simulated Witness B will be auto-generated to demonstrate conflict detection)"
+                rows={3}
+              />
+            </div>
+
             {/* ── Action toolbar ── */}
             <div className="flex flex-wrap gap-3 items-center">
               <Button
@@ -186,7 +228,7 @@ export default function InvestigatorPage() {
                 disabled={loading || backendOk === false}
               >
                 {loading
-                  ? <><i className="fas fa-spinner fa-spin mr-2" />Running…</>
+                  ? <><i className="fas fa-spinner fa-spin mr-2" />Analyzing multiple testimonies...</>
                   : <><i className="fas fa-play mr-2" />Run Full Pipeline</>
                 }
               </Button>
@@ -231,6 +273,34 @@ export default function InvestigatorPage() {
                     <><br /><span className="text-xs text-red-500">Backend appears offline at http://localhost:8000 — use "Load Sample" for demo data.</span></>
                   )}
                 </div>
+              </div>
+            )}
+
+            {/* Fallback/Partial Warnings */}
+            {result?.status === "fallback" && (
+              <div className="mt-4 bg-[#fff8e6] border border-[#f5c6cb] rounded-xl p-4 text-sm text-[#856404] flex items-start gap-3">
+                <div>
+                  ⚠️ Full AI analysis partially failed. Showing simplified results.
+                </div>
+              </div>
+            )}
+            
+            {result?.status === "partial" && (
+              <div className="mt-4 bg-[#fff8e6] border border-[#f5c6cb] rounded-xl p-4 text-sm text-[#856404] flex items-start gap-3">
+                <div>
+                  ⚠️ Some stages failed. Results may be incomplete.
+                </div>
+              </div>
+            )}
+
+            {/* Analysis Summary (Report) */}
+            {result?.report?.summary && (
+              <div className="mt-6 bg-[#FBE8CE] border border-amber-200 rounded-xl p-5 text-sm text-gray-800 shadow-sm">
+                <p className="font-semibold text-amber-700 mb-2 text-base font-serif-display">
+                  <i className="fas fa-file-alt mr-2" />
+                  Investigation Summary
+                </p>
+                <p className="leading-relaxed">{result.report.summary}</p>
               </div>
             )}
           </header>
@@ -282,13 +352,13 @@ export default function InvestigatorPage() {
               <h3 className="text-xl font-bold text-gray-800 mb-6 flex items-center gap-3 font-serif-display">
                 <i className="fas fa-triangle-exclamation text-amber-600" aria-hidden="true" />
                 Conflict Analysis
-                {conflicts?.conflict_count != null && (
+                {conflictsObj?.conflict_count != null && (
                   <span className="ml-auto text-xs font-mono-code text-gray-500 font-normal">
-                    {conflicts.conflict_count} conflict{conflicts.conflict_count !== 1 ? 's' : ''}
+                    {conflictsObj.conflict_count} conflict{conflictsObj.conflict_count !== 1 ? 's' : ''}
                   </span>
                 )}
               </h3>
-              <ConflictAnalysis conflicts={conflicts} loading={loading} />
+              <ConflictAnalysis conflicts={conflictsObj} conflictsData={conflictsData} loading={loading} />
             </section>
           </div>
 
@@ -301,11 +371,18 @@ export default function InvestigatorPage() {
               <i className="fas fa-circle-question text-[#9AB17A]" aria-hidden="true" />
               Suggested Next Questions
             </h3>
+            {/* Provide question directly if available */}
             <SuggestedQuestions
               questions={null}
-              conflicts={conflicts}
+              nextQuestion={result?.next_question}
+              conflicts={conflictsObj}
               loading={loading}
             />
+          </section>
+
+          {/* ── Testimony Divergence Graph ── */}
+          <section aria-label="Testimony Divergence Graph" className="mt-8">
+            <GraphView result={result} testimonies={sentTestimonies} />
           </section>
 
           {/* ── Raw transcript (collapsible) ── */}

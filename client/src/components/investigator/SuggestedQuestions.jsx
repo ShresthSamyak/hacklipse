@@ -4,15 +4,15 @@ import Badge from '../ui/Badge'
  * SuggestedQuestions — shows AI-generated investigator questions.
  *
  * Two data sources (in priority order):
- *   1. `questions` prop  — array from /questions/timelines/{id}  (persisted)
- *   2. `conflicts` prop  — pipeline ConflictDetectionResult which contains `next_question`
+ *   2. `nextQuestion` prop  — pipeline next_question block
  *
  * Props:
  *   questions?: Array<{ id, question_text, priority?, target_narrator? }>
- *   conflicts?: object   (pipeline conflicts blob — used as fallback)
+ *   nextQuestion?: object   (result.next_question from pipeline)
+ *   conflicts?: object      (for legacy fallback if needed)
  *   loading?: boolean
  */
-export default function SuggestedQuestions({ questions, conflicts, loading }) {
+export default function SuggestedQuestions({ questions, nextQuestion, conflicts, loading }) {
   if (loading) {
     return (
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -50,8 +50,8 @@ export default function SuggestedQuestions({ questions, conflicts, loading }) {
     )
   }
 
-  // 2. Fallback: synthesise from conflict detection result
-  const nextQ = conflicts?.next_question
+  // 2. Fallback: synthesise from result.next_question OR conflicts.next_question
+  const nextQ = nextQuestion ?? conflicts?.next_question
   if (nextQ) {
     return (
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -59,7 +59,7 @@ export default function SuggestedQuestions({ questions, conflicts, loading }) {
           label="AI Suggestion"
           priority="high"
           question={nextQ.question}
-          target={null}
+          target={nextQ.target_narrators ? `Target: ${nextQ.target_narrators.join(', ')}` : null}
           aim={nextQ.reason}
         />
       </div>

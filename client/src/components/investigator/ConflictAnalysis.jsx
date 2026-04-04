@@ -13,7 +13,7 @@ import Badge from '../ui/Badge'
  */
 import { useState } from 'react'
 
-export default function ConflictAnalysis({ conflicts, loading }) {
+export default function ConflictAnalysis({ conflicts, conflictsData, loading }) {
   const [expanded, setExpanded] = useState(null)
 
   if (loading) {
@@ -29,8 +29,8 @@ export default function ConflictAnalysis({ conflicts, loading }) {
     )
   }
 
-  // Normalise whatever shape the backend sends
-  const rawConflicts = conflicts?.conflicts ?? []
+  // Use the explicitly provided conflicts array (`result?.conflicts?.conflicts || []`)
+  const rawConflicts = conflictsData || []
 
   if (!conflicts || rawConflicts.length === 0) {
     return (

@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import InputField from '../components/ui/InputField'
 import Button from '../components/ui/Button'
 import AudioRecorder from '../components/testimony/AudioRecorder'
-import { runDemoPipeline } from '../services/api'
+import { submitWitnessTestimony } from '../shared/api/witnessService'
 
 export default function WitnessPage() {
   const navigate = useNavigate()
@@ -11,6 +11,7 @@ export default function WitnessPage() {
   const [caseNumber, setCaseNumber] = useState('')
   const [incidentDate, setIncidentDate] = useState('')
   const [statementText, setStatementText] = useState('')
+  const [audioFile, setAudioFile] = useState(null)
 
   // API state
   const [loading, setLoading] = useState(false)
@@ -27,21 +28,22 @@ export default function WitnessPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault()
-    if (!statementText.trim()) return alert('Please provide your statement (text or audio)')
+    if (!statementText.trim() && !audioFile) return alert('Please provide your statement (text or audio)')
 
     setLoading(true)
     setError(null)
 
     try {
-      const data = await runDemoPipeline(statementText, {
-        fastPreview: false,
-        demoMode: true,
+      const data = await submitWitnessTestimony({
+        case_id: caseNumber,
+        text: statementText,
+        audioFile,
       })
       localStorage.setItem('lastPipelineResult', JSON.stringify(data))
       localStorage.setItem('currentCase', caseNumber)
       setResult(data)
     } catch (err) {
-      setError(err.message)
+      setError("Something went wrong. Please try again.")
     } finally {
       setLoading(false)
     }
@@ -58,7 +60,7 @@ export default function WitnessPage() {
           <div className="w-20 h-20 mx-auto mb-6">
             <div className="w-20 h-20 border-4 border-[#C3CC9B] border-t-[#9AB17A] rounded-full animate-spin" />
           </div>
-          <h2 className="text-2xl font-bold text-[#2d3a2d] mb-2 font-serif-display">Processing Statement</h2>
+          <h2 className="text-2xl font-bold text-[#2d3a2d] mb-2 font-serif-display">Processing your testimony...</h2>
           <p className="text-[#5a6b5a] text-sm">
             Running AI analysis pipeline…
           </p>
@@ -71,6 +73,7 @@ export default function WitnessPage() {
   if (result) {
     const eventCount = result.events?.length ?? 0
     const conflictCount = result.conflicts?.conflict_count ?? result.conflicts?.conflicts?.length ?? 0
+    const summary = result.report?.summary
 
     return (
       <div
@@ -81,13 +84,14 @@ export default function WitnessPage() {
           <div className="w-20 h-20 bg-gradient-to-br from-[#9AB17A] to-[#C3CC9B] rounded-full flex items-center justify-center mx-auto mb-6 shadow-lg">
             <i className="fas fa-check text-3xl text-white" aria-hidden="true" />
           </div>
-          <h2 className="text-3xl font-bold text-[#2d3a2d] mb-4 font-serif-display">Statement Submitted</h2>
+          <h2 className="text-3xl font-bold text-[#2d3a2d] mb-4 font-serif-display">Testimony recorded successfully</h2>
           <p className="text-gray-600 mb-6">
             Statement submitted and analysed successfully. Thank you for your cooperation.
           </p>
 
           <div className="bg-white/90 border border-[rgba(154,177,122,0.3)] rounded-xl p-5 mb-6 text-left shadow">
             <h3 className="font-semibold text-[#2d3a2d] mb-3 font-serif-display">Analysis Summary</h3>
+            {summary && <p className="text-sm text-gray-700 mb-4">{summary}</p>}
             <div className="grid grid-cols-2 gap-3 text-sm">
               <div className="bg-[rgba(154,177,122,0.1)] rounded-lg p-3">
                 <p className="text-xs text-gray-500 mb-1">Events Extracted</p>
@@ -187,9 +191,7 @@ export default function WitnessPage() {
                 <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-sm text-red-700 flex items-start gap-2">
                   <i className="fas fa-circle-exclamation mt-0.5 text-red-500" aria-hidden="true" />
                   <div>
-                    <strong>Submission failed:</strong> {error}
-                    <br />
-                    <span className="text-xs text-red-500">Make sure the backend is running on port 8000.</span>
+                    <strong>{error}</strong>
                   </div>
                 </div>
               )}
@@ -206,7 +208,7 @@ export default function WitnessPage() {
 
               <div className="text-center py-4">
                 <p className="text-sm text-gray-600 mb-4">Or record your statement</p>
-                <AudioRecorder waveSize="lg" />
+                <AudioRecorder waveSize="lg" onAudioReady={setAudioFile} />
               </div>
 
               <div className="flex gap-4">
