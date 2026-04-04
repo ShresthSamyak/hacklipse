@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Case Management | Narrative Merge Engine</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&amp;family=Manrope:wght@300;400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                "secondary-fixed": "#ffdad6",
+                "tertiary-container": "#ffb219",
+                "on-secondary-fixed-variant": "#930010",
+                "on-tertiary-fixed-variant": "#614000",
+                "on-secondary-container": "#ffd2cd",
+                "primary-container": "#00d2ff",
+                "on-secondary": "#680008",
+                "surface-variant": "#353436",
+                "surface-bright": "#39393a",
+                "on-primary-container": "#00566a",
+                "surface-container": "#201f20",
+                "primary-fixed": "#b6ebff",
+                "error": "#ffb4ab",
+                "on-tertiary-container": "#6b4800",
+                "primary-fixed-dim": "#47d6ff",
+                "on-background": "#e5e2e3",
+                "secondary-fixed-dim": "#ffb3ac",
+                "on-surface-variant": "#bbc9cf",
+                "surface-dim": "#131314",
+                "outline-variant": "#3c494e",
+                "secondary": "#ffb3ac",
+                "tertiary-fixed": "#ffddaf",
+                "inverse-primary": "#00677f",
+                "on-surface": "#e5e2e3",
+                "on-tertiary": "#432c00",
+                "error-container": "#93000a",
+                "surface-container-high": "#2a2a2b",
+                "on-primary": "#003543",
+                "surface": "#131314",
+                "surface-container-lowest": "#0e0e0f",
+                "tertiary": "#ffd79c",
+                "on-error": "#690005",
+                "inverse-surface": "#e5e2e3",
+                "on-secondary-fixed": "#410003",
+                "on-primary-fixed": "#001f28",
+                "surface-container-highest": "#353436",
+                "surface-container-low": "#1c1b1c",
+                "tertiary-fixed-dim": "#ffba43",
+                "outline": "#859399",
+                "on-error-container": "#ffdad6",
+                "on-tertiary-fixed": "#281800",
+                "primary": "#a5e7ff",
+                "surface-tint": "#47d6ff",
+                "inverse-on-surface": "#313031",
+                "on-primary-fixed-variant": "#004e60",
+                "secondary-container": "#c40019",
+                "background": "#131314"
+            },
+            "borderRadius": {
+                "DEFAULT": "0rem",
+                "lg": "0rem",
+                "xl": "0rem",
+                "full": "0rem"
+            },
+            "fontFamily": {
+                "headline": ["Space Grotesk"],
+                "body": ["Manrope"],
+                "label": ["Space Grotesk"]
+            }
+          },
+        },
+      }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .flicker-animation:hover {
+            animation: flicker 0.15s infinite alternate;
+        }
+        @keyframes flicker {
+            0% { opacity: 0.9; }
+            100% { opacity: 1; filter: brightness(1.2); }
+        }
+        body {
+            background-color: #131314;
+            background-image: radial-gradient(#201f20 1px, transparent 1px);
+            background-size: 40px 40px;
+            color: #e5e2e3;
+        }
+    </style>
+</head>
+<body class="font-body selection:bg-primary selection:text-on-primary">
+<!-- TopNavBar -->
+<header class="fixed top-0 w-full z-50 flex justify-between items-center px-6 h-16 bg-[#131314] dark:bg-[#131314]">
+<div class="flex items-center gap-8">
+<span class="text-xl font-bold tracking-tighter text-[#a5e7ff] font-headline">Narrative Merge Engine</span>
+<nav class="hidden md:flex gap-6 items-center">
+<a class="font-['Space_Grotesk'] tracking-tight text-sm uppercase text-[#a5e7ff] font-bold border-b-2 border-[#a5e7ff] h-16 flex items-center transition-all duration-75" href="#">Case Selector</a>
+<a class="font-['Space_Grotesk'] tracking-tight text-sm uppercase text-gray-500 hover:bg-[#a5e7ff]/10 hover:text-white h-16 px-2 flex items-center transition-all duration-75" href="#">Mode Toggle</a>
+</nav>
+</div>
+<div class="flex items-center gap-4">
+<div class="material-symbols-outlined text-[#a5e7ff] cursor-pointer active:scale-95 transition-transform" data-icon="account_circle">account_circle</div>
+</div>
+</header>
+<!-- SideNavBar -->
+<aside class="fixed left-0 top-16 h-[calc(100vh-64px)] z-40 flex flex-col pt-4 bg-[#201f20] dark:bg-[#201f20] w-64">
+<div class="px-6 mb-8">
+<h2 class="text-[#a5e7ff] font-black uppercase font-headline tracking-widest text-lg">Dossier</h2>
+<p class="font-['Space_Grotesk'] text-[10px] font-medium uppercase text-gray-500 tracking-tighter">AI-Forensics v1.0</p>
+</div>
+<nav class="flex flex-col w-full">
+<a class="flex items-center gap-3 text-gray-400 p-3 w-full font-['Space_Grotesk'] text-xs font-medium uppercase hover:bg-white/5 transition-colors" href="#">
+<span class="material-symbols-outlined" data-icon="dashboard">dashboard</span>
+                Dashboard
+            </a>
+<a class="flex items-center gap-3 bg-[#a5e7ff] text-[#003543] p-3 w-full font-['Space_Grotesk'] text-xs font-medium uppercase transition-all duration-150 ease-in-out" href="#">
+<span class="material-symbols-outlined" data-icon="folder_open">folder_open</span>
+                Cases
+            </a>
+<a class="flex items-center gap-3 text-gray-400 p-3 w-full font-['Space_Grotesk'] text-xs font-medium uppercase hover:bg-white/5 transition-colors" href="#">
+<span class="material-symbols-outlined" data-icon="account_tree">account_tree</span>
+                Branch View
+            </a>
+<a class="flex items-center gap-3 text-gray-400 p-3 w-full font-['Space_Grotesk'] text-xs font-medium uppercase hover:bg-white/5 transition-colors" href="#">
+<span class="material-symbols-outlined" data-icon="warning">warning</span>
+                Conflict Explorer
+            </a>
+<a class="flex items-center gap-3 text-gray-400 p-3 w-full font-['Space_Grotesk'] text-xs font-medium uppercase hover:bg-white/5 transition-colors" href="#">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+                Settings
+            </a>
+</nav>
+<div class="mt-auto p-6 border-t border-outline-variant/10">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 bg-surface-container-highest flex items-center justify-center">
+<span class="material-symbols-outlined text-xs" data-icon="shield">shield</span>
+</div>
+<div>
+<p class="text-[10px] font-headline uppercase text-primary font-bold">Investigator</p>
+<p class="text-[9px] text-gray-500 uppercase tracking-widest">ID: 492-X-DELTA</p>
+</div>
+</div>
+</div>
+</aside>
+<!-- Main Content Canvas -->
+<main class="ml-64 mt-16 p-8 min-h-screen">
+<!-- Header Section -->
+<header class="flex justify-between items-end mb-12">
+<div>
+<h1 class="font-headline text-5xl font-bold tracking-tighter uppercase text-on-surface">Active Investigations</h1>
+<p class="font-label text-sm text-gray-500 mt-2 tracking-widest">SUB-PROCESS: NARRATIVE_SCANNER_v4.2</p>
+</div>
+<button class="bg-primary text-on-primary px-8 py-4 font-headline font-bold uppercase text-xs tracking-widest flicker-animation active:scale-95 transition-all">
+                Create new case
+            </button>
+</header>
+<!-- Stats Overview Row -->
+<div class="grid grid-cols-4 gap-px bg-outline-variant/20 mb-12">
+<div class="bg-surface-container-low p-6">
+<p class="font-label text-[10px] uppercase text-gray-500 tracking-widest mb-1">Total Cases</p>
+<p class="font-headline text-3xl font-bold text-primary">124</p>
+</div>
+<div class="bg-surface-container-low p-6">
+<p class="font-label text-[10px] uppercase text-gray-500 tracking-widest mb-1">Active Conflicts</p>
+<p class="font-headline text-3xl font-bold text-secondary">32</p>
+</div>
+<div class="bg-surface-container-low p-6">
+<p class="font-label text-[10px] uppercase text-gray-500 tracking-widest mb-1">Merge Rate</p>
+<p class="font-headline text-3xl font-bold text-tertiary">92.4%</p>
+</div>
+<div class="bg-surface-container-low p-6">
+<p class="font-label text-[10px] uppercase text-gray-500 tracking-widest mb-1">System Health</p>
+<p class="font-headline text-3xl font-bold text-primary">OPTIMAL</p>
+</div>
+</div>
+<!-- Case Grid -->
+<div class="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
+<!-- Case Card 1 -->
+<div class="bg-surface-container-high hover:bg-surface-container-highest transition-colors group relative overflow-hidden">
+<div class="absolute top-0 left-0 w-1 h-full bg-primary"></div>
+<div class="p-6">
+<div class="flex justify-between items-start mb-6">
+<div>
+<span class="font-label text-[10px] text-primary uppercase tracking-[0.2em] mb-2 block">Case ID: #772-OMEGA</span>
+<h3 class="font-headline text-xl font-bold uppercase leading-tight group-hover:text-primary transition-colors">The Lazarus Discrepancy</h3>
+</div>
+<span class="bg-primary/10 text-primary px-2 py-1 font-label text-[9px] uppercase font-bold border border-primary/20">Open</span>
+</div>
+<div class="space-y-4 mb-8">
+<div class="flex justify-between font-label text-[10px] uppercase text-gray-400">
+<span>Evidence Branches</span>
+<span class="text-on-surface">08 Units</span>
+</div>
+<div class="flex justify-between font-label text-[10px] uppercase text-gray-400">
+<span>Conflict Density</span>
+<span class="text-secondary font-bold">12 Discrepancies</span>
+</div>
+</div>
+<!-- Progress Bar Component -->
+<div class="mb-8">
+<div class="flex justify-between items-center mb-2">
+<span class="font-label text-[9px] uppercase tracking-widest text-gray-500">Analysis Progress</span>
+<span class="font-label text-[9px] text-primary font-bold">68%</span>
+</div>
+<div class="h-1 bg-surface-container-lowest w-full relative">
+<div class="absolute top-0 left-0 h-full bg-primary" style="width: 68%"></div>
+</div>
+</div>
+<div class="flex gap-2">
+<button class="flex-1 border border-outline-variant py-2 font-headline text-[10px] uppercase tracking-widest hover:bg-on-surface hover:text-surface transition-colors">View Dossier</button>
+<button class="w-12 border border-outline-variant flex items-center justify-center hover:bg-secondary/10 hover:text-secondary transition-colors">
+<span class="material-symbols-outlined text-sm" data-icon="more_horiz">more_horiz</span>
+</button>
+</div>
+</div>
+<!-- Subtle texture overlay -->
+<div class="absolute inset-0 pointer-events-none opacity-5 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')]"></div>
+</div>
+<!-- Case Card 2 -->
+<div class="bg-surface-container-high hover:bg-surface-container-highest transition-colors group relative overflow-hidden">
+<div class="absolute top-0 left-0 w-1 h-full bg-secondary"></div>
+<div class="p-6">
+<div class="flex justify-between items-start mb-6">
+<div>
+<span class="font-label text-[10px] text-secondary uppercase tracking-[0.2em] mb-2 block">Case ID: #441-THETA</span>
+<h3 class="font-headline text-xl font-bold uppercase leading-tight group-hover:text-secondary transition-colors">Ghost Signal Protocol</h3>
+</div>
+<span class="bg-secondary/10 text-secondary px-2 py-1 font-label text-[9px] uppercase font-bold border border-secondary/20">Critical</span>
+</div>
+<div class="space-y-4 mb-8">
+<div class="flex justify-between font-label text-[10px] uppercase text-gray-400">
+<span>Evidence Branches</span>
+<span class="text-on-surface">14 Units</span>
+</div>
+<div class="flex justify-between font-label text-[10px] uppercase text-gray-400">
+<span>Conflict Density</span>
+<span class="text-secondary font-bold">03 Discrepancies</span>
+</div>
+</div>
+<!-- Progress Bar Component -->
+<div class="mb-8">
+<div class="flex justify-between items-center mb-2">
+<span class="font-label text-[9px] uppercase tracking-widest text-gray-500">Analysis Progress</span>
+<span class="font-label text-[9px] text-secondary font-bold">85%</span>
+</div>
+<div class="h-1 bg-surface-container-lowest w-full relative">
+<div class="absolute top-0 left-0 h-full bg-secondary" style="width: 85%"></div>
+</div>
+</div>
+<div class="flex gap-2">
+<button class="flex-1 border border-outline-variant py-2 font-headline text-[10px] uppercase tracking-widest hover:bg-on-surface hover:text-surface transition-colors">View Dossier</button>
+<button class="w-12 border border-outline-variant flex items-center justify-center">
+<span class="material-symbols-outlined text-sm" data-icon="more_horiz">more_horiz</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Case Card 3 (Intelligence Warning) -->
+<div class="bg-surface-container-high hover:bg-surface-container-highest transition-colors group relative overflow-hidden">
+<div class="absolute top-0 left-0 w-1 h-full bg-tertiary"></div>
+<div class="p-6">
+<div class="flex justify-between items-start mb-6">
+<div>
+<span class="font-label text-[10px] text-tertiary uppercase tracking-[0.2em] mb-2 block">Case ID: #902-SIGMA</span>
+<h3 class="font-headline text-xl font-bold uppercase leading-tight group-hover:text-tertiary transition-colors">Shadow Net Nexus</h3>
+</div>
+<span class="bg-tertiary/10 text-tertiary px-2 py-1 font-label text-[9px] uppercase font-bold border border-tertiary/20">Awaiting AI</span>
+</div>
+<div class="space-y-4 mb-8">
+<div class="flex justify-between font-label text-[10px] uppercase text-gray-400">
+<span>Evidence Branches</span>
+<span class="text-on-surface">22 Units</span>
+</div>
+<div class="flex justify-between font-label text-[10px] uppercase text-gray-400">
+<span>Conflict Density</span>
+<span class="text-secondary font-bold">41 Discrepancies</span>
+</div>
+</div>
+<!-- Progress Bar Component -->
+<div class="mb-8">
+<div class="flex justify-between items-center mb-2">
+<span class="font-label text-[9px] uppercase tracking-widest text-gray-500">Analysis Progress</span>
+<span class="font-label text-[9px] text-tertiary font-bold">12%</span>
+</div>
+<div class="h-1 bg-surface-container-lowest w-full relative">
+<div class="absolute top-0 left-0 h-full bg-tertiary" style="width: 12%"></div>
+</div>
+</div>
+<div class="flex gap-2">
+<button class="flex-1 border border-outline-variant py-2 font-headline text-[10px] uppercase tracking-widest hover:bg-on-surface hover:text-surface transition-colors">View Dossier</button>
+<button class="w-12 border border-outline-variant flex items-center justify-center">
+<span class="material-symbols-outlined text-sm" data-icon="more_horiz">more_horiz</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Case Card 4 -->
+<div class="bg-surface-container-high hover:bg-surface-container-highest transition-colors group relative overflow-hidden">
+<div class="absolute top-0 left-0 w-1 h-full bg-primary"></div>
+<div class="p-6">
+<div class="flex justify-between items-start mb-6">
+<div>
+<span class="font-label text-[10px] text-primary uppercase tracking-[0.2em] mb-2 block">Case ID: #331-BETA</span>
+<h3 class="font-headline text-xl font-bold uppercase leading-tight group-hover:text-primary transition-colors">Amnesia Logic Core</h3>
+</div>
+<span class="bg-primary/10 text-primary px-2 py-1 font-label text-[9px] uppercase font-bold border border-primary/20">Open</span>
+</div>
+<div class="space-y-4 mb-8">
+<div class="flex justify-between font-label text-[10px] uppercase text-gray-400">
+<span>Evidence Branches</span>
+<span class="text-on-surface">05 Units</span>
+</div>
+<div class="flex justify-between font-label text-[10px] uppercase text-gray-400">
+<span>Conflict Density</span>
+<span class="text-secondary font-bold">01 Discrepancies</span>
+</div>
+</div>
+<div class="mb-8">
+<div class="flex justify-between items-center mb-2">
+<span class="font-label text-[9px] uppercase tracking-widest text-gray-500">Analysis Progress</span>
+<span class="font-label text-[9px] text-primary font-bold">95%</span>
+</div>
+<div class="h-1 bg-surface-container-lowest w-full relative">
+<div class="absolute top-0 left-0 h-full bg-primary" style="width: 95%"></div>
+</div>
+</div>
+<div class="flex gap-2">
+<button class="flex-1 border border-outline-variant py-2 font-headline text-[10px] uppercase tracking-widest hover:bg-on-surface hover:text-surface transition-colors">View Dossier</button>
+<button class="w-12 border border-outline-variant flex items-center justify-center">
+<span class="material-symbols-outlined text-sm" data-icon="more_horiz">more_horiz</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Placeholder for New Case -->
+<div class="border-2 border-dashed border-outline-variant flex flex-col items-center justify-center p-12 text-gray-500 hover:border-primary hover:text-primary transition-all group cursor-pointer">
+<span class="material-symbols-outlined text-4xl mb-4 group-hover:scale-110 transition-transform" data-icon="add_circle">add_circle</span>
+<p class="font-headline font-bold uppercase text-xs tracking-[0.3em]">Initialize New Dossier</p>
+<p class="font-label text-[10px] mt-2 opacity-50 uppercase tracking-widest">Awaiting Command Input...</p>
+</div>
+</div>
+<!-- System Logs Footer -->
+<div class="mt-16 bg-surface-container-lowest p-6 border-l-4 border-primary">
+<div class="flex items-center gap-4 mb-4">
+<span class="material-symbols-outlined text-primary text-sm" data-icon="terminal">terminal</span>
+<span class="font-label text-[10px] uppercase tracking-[0.4em] text-gray-500">Real-time Investigative Logs</span>
+</div>
+<div class="space-y-2 font-mono text-[11px] text-gray-500">
+<p><span class="text-primary-fixed-dim">[14:22:01]</span> <span class="text-on-surface">SYSTEM_LOG:</span> Analysis engine started for #772-OMEGA...</p>
+<p><span class="text-primary-fixed-dim">[14:23:44]</span> <span class="text-secondary">CONFLICT_DETECTED:</span> Discrepancy found in branch "Alibi_Ref_32"</p>
+<p><span class="text-primary-fixed-dim">[14:25:12]</span> <span class="text-on-surface">SYSTEM_LOG:</span> Merge proposal generated for #441-THETA</p>
+<div class="flex gap-1 animate-pulse">
+<span class="w-2 h-4 bg-primary"></span>
+</div>
+</div>
+</div>
+</main>
+<!-- Contextual FAB (Suppressed per rule on Settings/Details, but visible on Dashboard/Case List) -->
+<div class="fixed bottom-8 right-8 z-50">
+<button class="w-16 h-16 bg-primary text-on-primary flex items-center justify-center shadow-[0_0_20px_rgba(165,231,255,0.3)] hover:scale-105 active:scale-95 transition-all flicker-animation">
+<span class="material-symbols-outlined text-3xl" data-icon="search">search</span>
+</button>
+</div>
+</body></html>

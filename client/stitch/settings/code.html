@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Settings | Narrative Merge Engine</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&amp;family=Manrope:wght@300;400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<style>
+        body {
+            font-family: 'Manrope', sans-serif;
+            background-color: #131314;
+            color: #e5e2e3;
+        }
+        .font-headline { font-family: 'Space Grotesk', sans-serif; }
+        .font-label { font-family: 'Space Grotesk', sans-serif; }
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+            vertical-align: middle;
+        }
+        .flicker-animation:active {
+            opacity: 0.8;
+            transition: opacity 50ms;
+        }
+        /* Glassmorphism utility */
+        .glass-panel {
+            background: rgba(53, 52, 54, 0.6);
+            backdrop-filter: blur(20px);
+        }
+        /* Custom noise overlay simulated via CSS gradient as requested no assets */
+        .noise-overlay {
+            background-image: radial-gradient(#ffffff05 1px, transparent 0);
+            background-size: 4px 4px;
+        }
+    </style>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "secondary-fixed": "#ffdad6",
+                    "tertiary-container": "#ffb219",
+                    "on-secondary-fixed-variant": "#930010",
+                    "on-tertiary-fixed-variant": "#614000",
+                    "on-secondary-container": "#ffd2cd",
+                    "primary-container": "#00d2ff",
+                    "on-secondary": "#680008",
+                    "surface-variant": "#353436",
+                    "surface-bright": "#39393a",
+                    "on-primary-container": "#00566a",
+                    "surface-container": "#201f20",
+                    "primary-fixed": "#b6ebff",
+                    "error": "#ffb4ab",
+                    "on-tertiary-container": "#6b4800",
+                    "primary-fixed-dim": "#47d6ff",
+                    "on-background": "#e5e2e3",
+                    "secondary-fixed-dim": "#ffb3ac",
+                    "on-surface-variant": "#bbc9cf",
+                    "surface-dim": "#131314",
+                    "outline-variant": "#3c494e",
+                    "secondary": "#ffb3ac",
+                    "tertiary-fixed": "#ffddaf",
+                    "inverse-primary": "#00677f",
+                    "on-surface": "#e5e2e3",
+                    "on-tertiary": "#432c00",
+                    "error-container": "#93000a",
+                    "surface-container-high": "#2a2a2b",
+                    "on-primary": "#003543",
+                    "surface": "#131314",
+                    "surface-container-lowest": "#0e0e0f",
+                    "tertiary": "#ffd79c",
+                    "on-error": "#690005",
+                    "inverse-surface": "#e5e2e3",
+                    "on-secondary-fixed": "#410003",
+                    "on-primary-fixed": "#001f28",
+                    "surface-container-highest": "#353436",
+                    "surface-container-low": "#1c1b1c",
+                    "tertiary-fixed-dim": "#ffba43",
+                    "outline": "#859399",
+                    "on-error-container": "#ffdad6",
+                    "on-tertiary-fixed": "#281800",
+                    "primary": "#a5e7ff",
+                    "surface-tint": "#47d6ff",
+                    "inverse-on-surface": "#313031",
+                    "on-primary-fixed-variant": "#004e60",
+                    "secondary-container": "#c40019",
+                    "background": "#131314"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0px",
+                    "lg": "0px",
+                    "xl": "0px",
+                    "full": "9999px"
+            },
+            "fontFamily": {
+                    "headline": ["Space Grotesk"],
+                    "body": ["Manrope"],
+                    "label": ["Space Grotesk"]
+            }
+          },
+        },
+      }
+    </script>
+</head>
+<body class="bg-background text-on-background min-h-screen selection:bg-primary/30">
+<div class="fixed inset-0 pointer-events-none noise-overlay opacity-20 z-[100]"></div>
+<!-- TopNavBar Implementation -->
+<header class="fixed top-0 w-full z-50 flex justify-between items-center px-6 h-16 bg-[#131314] dark:bg-[#131314]">
+<div class="flex items-center gap-8">
+<span class="text-xl font-bold tracking-tighter text-[#a5e7ff] font-headline">Narrative Merge Engine</span>
+<nav class="hidden md:flex items-center gap-6">
+<a class="text-gray-500 font-['Space_Grotesk'] tracking-tight text-sm uppercase hover:bg-[#a5e7ff]/10 hover:text-white transition-all duration-75 px-2 py-1" href="#">Case Selector</a>
+<a class="text-gray-500 font-['Space_Grotesk'] tracking-tight text-sm uppercase hover:bg-[#a5e7ff]/10 hover:text-white transition-all duration-75 px-2 py-1" href="#">Mode Toggle</a>
+</nav>
+</div>
+<div class="flex items-center gap-4">
+<button class="material-symbols-outlined text-[#a5e7ff] flicker-animation active:scale-95">account_circle</button>
+</div>
+</header>
+<!-- SideNavBar Implementation -->
+<aside class="fixed left-0 top-16 h-[calc(100vh-64px)] z-40 flex flex-col pt-4 bg-[#201f20] dark:bg-[#201f20] w-64">
+<div class="px-6 mb-8">
+<div class="text-[#a5e7ff] font-black uppercase font-headline">Dossier</div>
+<div class="text-[10px] text-gray-500 font-label tracking-widest uppercase">AI-Forensics v1.0</div>
+</div>
+<nav class="flex flex-col flex-1">
+<a class="flex items-center gap-3 text-gray-400 p-3 w-full hover:bg-white/5 transition-colors font-['Space_Grotesk'] text-xs font-medium uppercase" href="#">
+<span class="material-symbols-outlined" data-icon="dashboard">dashboard</span>
+<span>Dashboard</span>
+</a>
+<a class="flex items-center gap-3 text-gray-400 p-3 w-full hover:bg-white/5 transition-colors font-['Space_Grotesk'] text-xs font-medium uppercase" href="#">
+<span class="material-symbols-outlined" data-icon="folder_open">folder_open</span>
+<span>Cases</span>
+</a>
+<a class="flex items-center gap-3 text-gray-400 p-3 w-full hover:bg-white/5 transition-colors font-['Space_Grotesk'] text-xs font-medium uppercase" href="#">
+<span class="material-symbols-outlined" data-icon="account_tree">account_tree</span>
+<span>Branch View</span>
+</a>
+<a class="flex items-center gap-3 text-gray-400 p-3 w-full hover:bg-white/5 transition-colors font-['Space_Grotesk'] text-xs font-medium uppercase" href="#">
+<span class="material-symbols-outlined" data-icon="warning">warning</span>
+<span>Conflict Explorer</span>
+</a>
+<a class="flex items-center gap-3 bg-[#a5e7ff] text-[#003543] p-3 w-full transition-all duration-150 ease-in-out font-['Space_Grotesk'] text-xs font-medium uppercase" href="#">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+<span>Settings</span>
+</a>
+</nav>
+<div class="p-6">
+<div class="bg-surface-container-lowest p-4 border-l-2 border-primary">
+<p class="text-[10px] font-label text-primary uppercase">Status</p>
+<p class="text-xs text-on-surface-variant font-mono">ENCRYPTION: ACTIVE</p>
+</div>
+</div>
+</aside>
+<!-- Main Content Area -->
+<main class="ml-64 mt-16 p-8 max-w-6xl">
+<header class="mb-12">
+<h1 class="text-5xl font-headline font-bold text-on-surface tracking-tighter uppercase mb-2">System Configuration</h1>
+<p class="text-on-surface-variant max-w-2xl font-body">Adjust core intelligence parameters, visual optics, and neural model selection for forensic analysis.</p>
+</header>
+<div class="grid grid-cols-12 gap-6">
+<!-- Bento Section: Visual & Theme -->
+<section class="col-span-12 md:col-span-7 bg-surface-container-high p-8 flex flex-col justify-between min-h-[320px]">
+<div>
+<h2 class="text-sm font-headline font-bold uppercase tracking-widest text-primary mb-6 flex items-center gap-2">
+<span class="material-symbols-outlined text-sm">visibility</span> Visual Optics
+                    </h2>
+<div class="space-y-8">
+<div class="flex justify-between items-center group">
+<div>
+<p class="text-lg font-headline font-medium">Luminosity Mode</p>
+<p class="text-xs text-on-surface-variant font-body">Toggle between high-contrast dark and archival light interface.</p>
+</div>
+<div class="flex bg-surface-container-lowest p-1">
+<button class="px-4 py-2 bg-primary text-on-primary text-xs font-headline font-bold uppercase">Dark</button>
+<button class="px-4 py-2 text-on-surface-variant text-xs font-headline font-bold uppercase hover:text-on-surface">Light</button>
+</div>
+</div>
+<div class="flex justify-between items-center">
+<div>
+<p class="text-lg font-headline font-medium">Density Control</p>
+<p class="text-xs text-on-surface-variant font-body">Compact view for expert investigators.</p>
+</div>
+<div class="w-12 h-6 bg-surface-container-highest flex items-center px-1">
+<div class="w-4 h-4 bg-primary"></div>
+</div>
+</div>
+</div>
+</div>
+<div class="mt-8 pt-8 border-t border-outline-variant/20 flex items-center justify-between">
+<span class="text-[10px] font-mono text-on-surface-variant">GFX_ENGINE: VULKAN_STABLE</span>
+<span class="text-[10px] font-mono text-primary">UI_RENDER: 120FPS</span>
+</div>
+</section>
+<!-- Bento Section: Quick Actions / Account -->
+<section class="col-span-12 md:col-span-5 bg-surface-container p-8 flex flex-col">
+<h2 class="text-sm font-headline font-bold uppercase tracking-widest text-tertiary mb-6 flex items-center gap-2">
+<span class="material-symbols-outlined text-sm">security</span> Identity Lock
+                </h2>
+<div class="flex-1 flex flex-col justify-center items-center text-center py-4">
+<div class="w-20 h-20 bg-surface-container-highest mb-4 flex items-center justify-center relative">
+<span class="material-symbols-outlined text-4xl text-on-surface-variant">person</span>
+<div class="absolute -bottom-1 -right-1 w-4 h-4 bg-primary"></div>
+</div>
+<p class="font-headline font-bold uppercase tracking-tight">Investigator #8821</p>
+<p class="text-xs text-on-surface-variant font-mono mb-6">Level 4 Clearance</p>
+<button class="w-full py-3 border border-outline-variant text-xs font-headline font-bold uppercase hover:bg-surface-variant transition-all">Rotate API Credentials</button>
+</div>
+</section>
+<!-- Bento Section: Audio Input -->
+<section class="col-span-12 md:col-span-4 bg-surface-container p-8">
+<h2 class="text-sm font-headline font-bold uppercase tracking-widest text-primary mb-6 flex items-center gap-2">
+<span class="material-symbols-outlined text-sm">mic</span> Audio Forensics
+                </h2>
+<div class="space-y-6">
+<div class="space-y-2">
+<label class="text-[10px] font-label uppercase text-on-surface-variant">Input Source</label>
+<select class="w-full bg-surface-container-lowest border-b border-outline-variant p-3 text-xs font-headline outline-none focus:border-primary transition-colors appearance-none text-on-surface">
+<option>INTEGRATED_ARRAY_01</option>
+<option>EXTERNAL_XLR_BETA</option>
+<option>VIRTUAL_STREAM_LINK</option>
+</select>
+</div>
+<div class="space-y-4">
+<div class="flex justify-between text-[10px] font-label uppercase">
+<span>Input Gain</span>
+<span class="text-primary">-12.4dB</span>
+</div>
+<div class="h-1 bg-surface-container-lowest w-full relative">
+<div class="absolute inset-y-0 left-0 bg-primary w-[65%]"></div>
+</div>
+</div>
+<div class="flex items-center gap-3">
+<div class="w-2 h-2 bg-primary animate-pulse"></div>
+<span class="text-[10px] font-mono text-on-surface-variant">MONITORING ACTIVE</span>
+</div>
+</div>
+</section>
+<!-- Bento Section: Model Selection (LLM) -->
+<section class="col-span-12 md:col-span-8 bg-surface-container-highest p-8 relative overflow-hidden">
+<div class="relative z-10">
+<h2 class="text-sm font-headline font-bold uppercase tracking-widest text-primary mb-8 flex items-center gap-2">
+<span class="material-symbols-outlined text-sm">psychology</span> Neural Model Selection
+                    </h2>
+<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+<!-- Model Card Active -->
+<div class="p-6 bg-surface-container-lowest border-l-4 border-primary">
+<div class="flex justify-between items-start mb-4">
+<span class="bg-primary/20 text-primary text-[9px] font-bold px-2 py-0.5 tracking-tighter uppercase">Active</span>
+<span class="material-symbols-outlined text-primary text-xl">token</span>
+</div>
+<h3 class="font-headline font-bold text-lg uppercase leading-none mb-1">Cerebro-9 Ultra</h3>
+<p class="text-[11px] text-on-surface-variant font-body mb-4">Optimized for complex cross-case contradiction detection.</p>
+<div class="flex gap-2">
+<span class="text-[9px] font-mono bg-surface-variant px-2 py-1">200K CTX</span>
+<span class="text-[9px] font-mono bg-surface-variant px-2 py-1">FP16</span>
+</div>
+</div>
+<!-- Model Card Inactive -->
+<div class="p-6 bg-surface-container-low hover:bg-surface-container transition-colors cursor-pointer group">
+<div class="flex justify-between items-start mb-4">
+<span class="text-on-surface-variant text-[9px] font-bold px-2 py-0.5 tracking-tighter uppercase">Available</span>
+<span class="material-symbols-outlined text-on-surface-variant text-xl group-hover:text-tertiary">bolt</span>
+</div>
+<h3 class="font-headline font-bold text-lg uppercase leading-none mb-1">Nexus-Lite v2</h3>
+<p class="text-[11px] text-on-surface-variant font-body mb-4">High-speed processing for real-time narrative stream mapping.</p>
+<div class="flex gap-2">
+<span class="text-[9px] font-mono bg-surface-container-lowest px-2 py-1">32K CTX</span>
+<span class="text-[9px] font-mono bg-surface-container-lowest px-2 py-1">INT8</span>
+</div>
+</div>
+</div>
+<div class="mt-8 flex flex-col gap-4">
+<div class="flex items-center justify-between">
+<label class="text-xs font-headline uppercase tracking-wide">Temperature Variance</label>
+<span class="text-xs font-mono text-primary">0.72</span>
+</div>
+<input class="w-full h-1 bg-surface-container-lowest appearance-none [&amp;::-webkit-slider-thumb]:appearance-none [&amp;::-webkit-slider-thumb]:w-3 [&amp;::-webkit-slider-thumb]:h-3 [&amp;::-webkit-slider-thumb]:bg-primary cursor-pointer" type="range"/>
+</div>
+</div>
+<!-- Abstract neural visualization background -->
+<div class="absolute -right-20 -bottom-20 opacity-5 pointer-events-none">
+<svg height="400" viewbox="0 0 100 100" width="400">
+<circle class="text-primary" cx="50" cy="50" fill="none" r="40" stroke="currentColor" stroke-width="0.5"></circle>
+<circle class="text-primary" cx="50" cy="50" fill="none" r="30" stroke="currentColor" stroke-width="0.5"></circle>
+<circle class="text-primary" cx="50" cy="50" fill="none" r="20" stroke="currentColor" stroke-width="0.5"></circle>
+<line class="text-primary" stroke="currentColor" stroke-width="0.2" x1="10" x2="90" y1="50" y2="50"></line>
+<line class="text-primary" stroke="currentColor" stroke-width="0.2" x1="50" x2="50" y1="10" y2="90"></line>
+</svg>
+</div>
+</section>
+<!-- Global Actions -->
+<footer class="col-span-12 flex justify-end gap-4 mt-8">
+<button class="px-8 py-3 text-xs font-headline font-bold uppercase border border-outline-variant hover:bg-surface-container-low transition-all">Revert to Factory</button>
+<button class="px-10 py-3 text-xs font-headline font-bold uppercase bg-primary text-on-primary flicker-animation">Commit Configuration</button>
+</footer>
+</div>
+</main>
+<!-- Background Layer for Depth -->
+<div class="fixed bottom-0 right-0 p-12 pointer-events-none opacity-20">
+<span class="text-8xl font-headline font-black text-surface-container-highest tracking-tighter">SETTINGS_X09</span>
+</div>
+</body></html>
