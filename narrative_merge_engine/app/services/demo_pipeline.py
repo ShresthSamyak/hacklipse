@@ -68,6 +68,7 @@ from app.models.schemas.timeline_reconstruction import (
 from app.models.schemas.testimony_analysis import TestimonyAnalysisResult
 from app.services.conflict_detection_service import ConflictDetectionService
 from app.services.event_extraction_service import EventExtractionService
+from app.services.next_question_service import generate_next_question
 from app.services.report_generation_service import generate_final_report
 from app.services.speech_to_text_service import SpeechToTextService, TranscriptResult
 from app.services.timeline_reconstruction_service import TimelineReconstructionService
@@ -95,6 +96,11 @@ class PipelineStatus(str, Enum):
     FALLBACK = "fallback"  # multiple failures; output is minimal
 
 
+class PipelineMode(str, Enum):
+    SURVIVOR     = "survivor"      # supportive, non-confrontational
+    INVESTIGATOR = "investigator"  # full analysis with conflicts + questions
+
+
 # ─── Pipeline result ──────────────────────────────────────────────────────────
 
 @dataclass
@@ -109,12 +115,15 @@ class PipelineResult:
     # Stage outputs
     transcript: str = ""
     testimony_analysis: dict = field(default_factory=dict)
+    testimonies: list[dict] = field(default_factory=list)   # per-witness: [{witness_id, analysis, events}]
     events: list[dict] = field(default_factory=list)
     timeline: dict = field(default_factory=dict)
     conflicts: dict = field(default_factory=dict)
     report: dict = field(default_factory=dict)
+    next_question: dict | None = None
 
     # Pipeline metadata
+    mode: PipelineMode = PipelineMode.INVESTIGATOR
     status: PipelineStatus = PipelineStatus.SUCCESS
     errors: list[str] = field(default_factory=list)
     stage_timings: dict[str, float] = field(default_factory=dict)  # ms per stage
@@ -125,12 +134,15 @@ class PipelineResult:
     def to_dict(self) -> dict:
         return {
             "pipeline_id": self.pipeline_id,
+            "mode": self.mode.value,
             "transcript": self.transcript,
             "testimony_analysis": self.testimony_analysis,
+            "testimonies": self.testimonies,
             "events": self.events,
             "timeline": self.timeline,
             "conflicts": self.conflicts,
             "report": self.report,
+            "next_question": self.next_question,
             "status": self.status.value,
             "errors": self.errors,
             "stage_timings_ms": self.stage_timings,
@@ -192,10 +204,13 @@ class DemoPipeline:
         audio: bytes | None = None,
         filename: str = "testimony.wav",
         text: str | None = None,
+        mode: PipelineMode = PipelineMode.INVESTIGATOR,
         demo_mode: bool = False,
         fast_preview: bool = False,
-        # For multi-witness mode: pass multiple text blocks keyed by label
+        # Legacy multi-witness mode: keyed by label, no per-witness analysis
         branches_override: dict[str, str] | None = None,
+        # NEW multi-witness mode: full per-witness analysis + attribution
+        testimonies: list[dict] | None = None,
     ) -> PipelineResult:
         """
         Run the end-to-end pipeline.
@@ -204,13 +219,18 @@ class DemoPipeline:
             audio:            Raw audio bytes. Takes priority over text.
             filename:         Filename hint for Whisper format detection.
             text:             Raw testimony text (used if audio is None).
+            mode:             Pipeline mode — "survivor" or "investigator".
             demo_mode:        temperature=0 everywhere, verbose stage logs.
             fast_preview:     Skip timeline reasoning; return minimal output fast.
-            branches_override: Skip extraction; use these pre-built branches for
-                               conflict detection. Dict of {label: text}.
+            branches_override: Legacy multi-witness — dict of {label: text}.
+                               No per-witness testimony analysis. Backward compat only.
+            testimonies:      NEW multi-witness — list of {"witness_id": str, "text": str}.
+                               Runs testimony analysis + extraction per witness in parallel.
+                               Preserves witness attribution in every event.
         """
         pipeline_start = time.monotonic()
         result = PipelineResult(
+            mode=mode,
             demo_mode=demo_mode,
             fast_preview=fast_preview,
         )
@@ -218,6 +238,7 @@ class DemoPipeline:
         logger.info(
             "Pipeline started",
             pipeline_id=result.pipeline_id,
+            mode=mode.value,
             has_audio=audio is not None,
             has_text=text is not None,
             demo_mode=demo_mode,
@@ -239,42 +260,88 @@ class DemoPipeline:
             result.status = PipelineStatus.PARTIAL
 
         # ── Stage 2: Event Extraction ─────────────────────────────────────────
-        if branches_override:
-            # Multi-witness mode: extract from all branches CONCURRENTLY.
-            # Each branch is isolated — a failure returns [] + appends an error,
-            # it never cancels sibling branches.
+        if testimonies:
+            # ── NEW: Multi-witness path — parallel per-witness analysis + extraction ──
+            # Each witness is fully isolated. One failure never cancels siblings.
+            witness_results: list[dict] = await asyncio.gather(
+                *[
+                    self._run_witness(
+                        result,
+                        witness_id=w["witness_id"],
+                        text=w["text"],
+                        demo_mode=demo_mode,
+                    )
+                    for w in testimonies
+                ]
+            )
+
+            result.testimonies = witness_results
+
+            # Build branch map preserving attribution
+            events_by_branch: dict[str, list[dict]] = {
+                wr["witness_id"]: wr["events"] for wr in witness_results
+            }
+            all_events = [e for wr in witness_results for e in wr["events"]]
+
+            # Backward compat: first witness analysis surfaces as flat field
+            if witness_results and witness_results[0].get("analysis"):
+                result.testimony_analysis = witness_results[0]["analysis"]
+
+            # Combined transcript for report stage
+            result.transcript = " | ".join(
+                f"[{w['witness_id']}] {w['text']}" for w in testimonies
+            )
+
+            # Collect all witness analyses for next_question + report
+            all_analyses: list[dict] = [
+                wr["analysis"] for wr in witness_results if wr.get("analysis")
+            ]
+
+            logger.info(
+                "Multi-witness processing complete",
+                pipeline_id=result.pipeline_id,
+                witness_count=len(testimonies),
+                total_events=len(all_events),
+                per_witness={wr["witness_id"]: len(wr["events"]) for wr in witness_results},
+            )
+
+        elif branches_override:
+            # ── LEGACY: branches path — no per-witness testimony analysis ──────
             labels = list(branches_override.keys())
             texts  = list(branches_override.values())
 
             branch_event_lists = await asyncio.gather(
                 *[
                     self._run_extraction_branch(
-                        result, label=label, text=text, demo_mode=demo_mode
+                        result, label=label, text=t, demo_mode=demo_mode
                     )
-                    for label, text in zip(labels, texts)
+                    for label, t in zip(labels, texts)
                 ]
             )
 
-            events_by_branch: dict[str, list[dict]] = {
-                label: [_event_to_dict(e) for e in events]
+            events_by_branch = {
+                label: [_event_to_dict(e, witness_id=label) for e in events]
                 for label, events in zip(labels, branch_event_lists)
             }
             all_events = [e for events in events_by_branch.values() for e in events]
+            all_analyses = [result.testimony_analysis] if result.testimony_analysis else []
 
             logger.info(
-                "Multi-witness extraction complete (concurrent)",
+                "Multi-witness extraction complete (legacy branches, no per-witness analysis)",
                 pipeline_id=result.pipeline_id,
                 branch_count=len(labels),
                 total_events=len(all_events),
                 per_branch={lbl: len(evts) for lbl, evts in events_by_branch.items()},
             )
+
         else:
+            # ── Single-witness path ───────────────────────────────────────────
             extracted_events = await self._run_extraction(
                 result, text=result.transcript, demo_mode=demo_mode
             )
             all_events = [_event_to_dict(e) for e in extracted_events]
-            # Single witness: all events go into one branch
             events_by_branch = {"Witness_A": all_events}
+            all_analyses = [result.testimony_analysis] if result.testimony_analysis else []
 
         result.events = all_events
 
@@ -305,32 +372,51 @@ class DemoPipeline:
             result.timeline = _build_trivial_timeline([])
             result.errors.append("No events extracted — timeline is empty.")
 
-        # ── Stage 4: Conflict Detection (strict mode) ─────────────────────────
-        if len(events_by_branch) >= 2 or (branches_override and len(events_by_branch) >= 1):
-            conflict_result = await self._run_conflicts(
-                result, branches=events_by_branch
-            )
-        elif len(events_by_branch) == 1:
-            # Only one branch — no cross-witness conflicts possible.
-            # Still run strict detection on the single branch to surface
-            # internal contradictions (temporal loops, presence mismatches).
-            conflict_result = await self._run_conflicts(
-                result, branches=events_by_branch
-            )
+        # ── Stage 4: Conflict Detection (investigator only) ─────────────────
+        conflict_result = StrictConflictResult()
+
+        if mode == PipelineMode.INVESTIGATOR:
+            if events_by_branch:
+                conflict_result = await self._run_conflicts(
+                    result, branches=events_by_branch
+                )
+            else:
+                result.errors.append("No branches available for conflict detection.")
         else:
-            conflict_result = StrictConflictResult()
-            result.errors.append("No branches available for conflict detection.")
+            # Survivor mode: skip conflict detection entirely
+            logger.info(
+                "Survivor mode — skipping conflict detection",
+                pipeline_id=result.pipeline_id,
+            )
 
         result.conflicts = _strict_result_to_dict(conflict_result)
 
-        # ── Stage 5: Final Investigative Report ──────────────────────────────
+        # ── Stage 5: Next Question (investigator only) ────────────────────
+        # Pass all witness analyses so question is informed by every perspective
+        if mode == PipelineMode.INVESTIGATOR:
+            analysis_payload = all_analyses if len(all_analyses) > 1 else result.testimony_analysis
+            result.next_question = await self._run_next_question(
+                result,
+                conflicts=result.conflicts,
+                events=result.events,
+                testimony_analysis=analysis_payload,
+            )
+
+        # ── Stage 6: Final Report ─────────────────────────────────────────
+        # Small back-off to avoid Groq rate-limit errors after heavy upstream stages
+        # (conflict detection + next-question both hammer the API in quick succession).
+        await asyncio.sleep(1.5)
+
+        # Multi-witness: pass all analyses for richer report synthesis
+        report_analysis = all_analyses if len(all_analyses) > 1 else result.testimony_analysis
         report_result = await self._run_report(
             result,
             transcript=result.transcript,
-            testimony_analysis=result.testimony_analysis,
+            testimony_analysis=report_analysis,
             events=result.events,
             timeline=result.timeline,
             conflicts=result.conflicts,
+            mode=mode.value,
         )
         result.report = report_result.model_dump()
 
@@ -341,6 +427,7 @@ class DemoPipeline:
         logger.info(
             "Pipeline completed",
             pipeline_id=result.pipeline_id,
+            mode=mode.value,
             status=result.status.value,
             total_ms=total_ms,
             events=len(all_events),
@@ -492,6 +579,83 @@ class DemoPipeline:
                 return _text_to_fallback_events(text)
 
         return []
+
+    async def _run_witness(
+        self,
+        result: PipelineResult,
+        *,
+        witness_id: str,
+        text: str,
+        demo_mode: bool,
+    ) -> dict:
+        """
+        Per-witness stage runner for the NEW multi-witness path.
+
+        Runs in parallel via asyncio.gather. Fully isolated — exceptions are
+        caught and stored in result.errors; never propagates to siblings.
+
+        Returns:
+            {
+                "witness_id": str,
+                "analysis": dict,      # TestimonyAnalysisResult.model_dump() or {}
+                "events":   list[dict] # _event_to_dict(e, witness_id=...) per event
+            }
+        """
+        logger.info(
+            "Witness processing started",
+            pipeline_id=result.pipeline_id,
+            witness_id=witness_id,
+            text_length=len(text),
+        )
+
+        analysis_dict: dict = {}
+        testimony_analysis = None
+
+        # Step A: Testimony analysis (isolated)
+        try:
+            testimony_analysis = await asyncio.wait_for(
+                analyze_testimony_sensitivity(text), timeout=15
+            )
+            analysis_dict = testimony_analysis.model_dump()
+        except Exception as exc:
+            logger.warning(
+                "Witness testimony analysis failed",
+                pipeline_id=result.pipeline_id,
+                witness_id=witness_id,
+                error=str(exc),
+            )
+            result.errors.append(f"[{witness_id}] Testimony analysis failed: {exc}")
+
+        # Step B: Event extraction (isolated)
+        events: list[dict] = []
+        try:
+            extracted = await self._run_extraction(
+                result, text=text, demo_mode=demo_mode
+            )
+            # Stamp EVERY event with this witness's ID so attribution is never lost
+            events = [_event_to_dict(e, witness_id=witness_id) for e in extracted]
+        except Exception as exc:
+            logger.error(
+                "Witness event extraction failed",
+                pipeline_id=result.pipeline_id,
+                witness_id=witness_id,
+                error=str(exc),
+            )
+            result.errors.append(f"[{witness_id}] Event extraction failed: {exc}")
+
+        logger.info(
+            "Witness processing complete",
+            pipeline_id=result.pipeline_id,
+            witness_id=witness_id,
+            events=len(events),
+            has_analysis=bool(analysis_dict),
+        )
+
+        return {
+            "witness_id": witness_id,
+            "analysis": analysis_dict,
+            "events": events,
+        }
 
     async def _run_extraction_branch(
         self,
@@ -650,6 +814,59 @@ class DemoPipeline:
 
         return StrictConflictResult()
 
+    async def _run_next_question(
+        self,
+        result: PipelineResult,
+        *,
+        conflicts: dict,
+        events: list[dict],
+        testimony_analysis: dict | None,
+    ) -> dict | None:
+        """Stage 5: Generate the single best next question. Investigator only."""
+        stage_start = time.monotonic()
+
+        try:
+            question = await asyncio.wait_for(
+                generate_next_question(
+                    conflicts=conflicts,
+                    events=events,
+                    testimony_analysis=testimony_analysis,
+                ),
+                timeout=8,
+            )
+            elapsed = round((time.monotonic() - stage_start) * 1000, 1)
+            result.stage_timings["next_question_ms"] = elapsed
+
+            if question:
+                logger.info(
+                    "Next question generated",
+                    pipeline_id=result.pipeline_id,
+                    priority=question.get("priority"),
+                    elapsed_ms=elapsed,
+                )
+            else:
+                logger.warning(
+                    "Next question returned None",
+                    pipeline_id=result.pipeline_id,
+                )
+            return question
+
+        except asyncio.TimeoutError:
+            logger.error("Next question generation timed out", pipeline_id=result.pipeline_id)
+            result.errors.append("Next question generation timed out.")
+            _downgrade_status(result)
+            return None
+
+        except Exception as exc:
+            logger.error(
+                "Next question generation failed",
+                pipeline_id=result.pipeline_id,
+                error=str(exc),
+            )
+            result.errors.append(f"Next question error: {exc}")
+            _downgrade_status(result)
+            return None
+
     async def _run_report(
         self,
         result: PipelineResult,
@@ -659,8 +876,9 @@ class DemoPipeline:
         events: list[dict],
         timeline: dict,
         conflicts: dict,
+        mode: str = "investigator",
     ) -> ReportGenerationResult:
-        """Stage 5: Final Report Generation. Fully isolated."""
+        """Stage 6: Final Report Generation. Fully isolated."""
         stage_start = time.monotonic()
 
         try:
@@ -671,8 +889,9 @@ class DemoPipeline:
                     events=events,
                     timeline=timeline,
                     conflicts=conflicts,
+                    mode=mode,
                 ),
-                timeout=20, # Wait longer for full report synthesis
+                timeout=20,
             )
             elapsed = round((time.monotonic() - stage_start) * 1000, 1)
             result.stage_timings["report_ms"] = elapsed
@@ -680,6 +899,7 @@ class DemoPipeline:
             logger.info(
                 "Report built",
                 pipeline_id=result.pipeline_id,
+                mode=mode,
                 elapsed_ms=elapsed,
             )
             return report
@@ -745,9 +965,12 @@ def _fallback_timeline(events: list[dict]) -> TimelineReconstructionResult:
 
 # ─── Shape converters ─────────────────────────────────────────────────────────
 
-def _event_to_dict(event: ExtractedEvent) -> dict:
-    """Convert an ExtractedEvent to a plain dict for downstream stages."""
-    return {
+def _event_to_dict(event: ExtractedEvent, witness_id: str | None = None) -> dict:
+    """Convert an ExtractedEvent to a plain dict for downstream stages.
+
+    Always include witness_id when available so attribution is never lost.
+    """
+    d = {
         "id": event.id,
         "description": event.description,
         "time": event.time,
@@ -757,6 +980,9 @@ def _event_to_dict(event: ExtractedEvent) -> dict:
         "confidence": event.confidence,
         "source_text": event.source_text,
     }
+    if witness_id is not None:
+        d["witness_id"] = witness_id
+    return d
 
 
 def _timeline_to_dict(timeline: TimelineReconstructionResult) -> dict:

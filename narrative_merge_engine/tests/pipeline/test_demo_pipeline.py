@@ -37,6 +37,7 @@ from app.models.schemas.timeline_reconstruction import (
 )
 from app.services.demo_pipeline import (
     DemoPipeline,
+    PipelineMode,
     PipelineResult,
     PipelineStatus,
     _DEMO_SAMPLE_TRANSCRIPT,
@@ -166,9 +167,23 @@ def _make_pipeline(
         recommended_next_steps=["Review CCTV footage."],
     )
 
+    # Patch next question generation — avoids real LLM calls
+    patcher_next_q = patch(
+        "app.services.demo_pipeline.generate_next_question",
+        new_callable=AsyncMock
+    )
+    mock_next_q = patcher_next_q.start()
+    mock_next_q.return_value = {
+        "question": "What were you doing before entering the building?",
+        "reason": "Entry time is the temporal anchor.",
+        "priority": "high",
+        "target_event_ids": [],
+    }
+
     import atexit
     atexit.register(patcher_testimony.stop)
     atexit.register(patcher_report.stop)
+    atexit.register(patcher_next_q.stop)
 
     return pipeline
 
@@ -577,3 +592,215 @@ class TestHelpers:
         required = {"id", "description", "time", "time_uncertainty",
                     "location", "actors", "confidence", "source_text"}
         assert required.issubset(d.keys())
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 11. Mode-specific tests
+# ══════════════════════════════════════════════════════════════════════════════
+
+class TestSurvivorMode:
+    """Survivor mode skips conflict detection and question generation."""
+
+    @pytest.mark.asyncio
+    async def test_survivor_skips_conflicts(self):
+        pipeline = _make_pipeline()
+        result = await pipeline.run(
+            text="I saw someone enter through the back door around midnight.",
+            mode=PipelineMode.SURVIVOR,
+        )
+        assert result.mode == PipelineMode.SURVIVOR
+        assert result.conflicts.get("conflict_count", 0) == 0
+        assert result.conflicts.get("has_conflicts") is False
+
+    @pytest.mark.asyncio
+    async def test_survivor_has_no_next_question(self):
+        pipeline = _make_pipeline()
+        result = await pipeline.run(
+            text="I saw someone enter through the back door around midnight.",
+            mode=PipelineMode.SURVIVOR,
+        )
+        assert result.next_question is None
+
+    @pytest.mark.asyncio
+    async def test_survivor_still_produces_report(self):
+        pipeline = _make_pipeline()
+        result = await pipeline.run(
+            text="I saw someone enter through the back door around midnight.",
+            mode=PipelineMode.SURVIVOR,
+        )
+        assert result.report  # not empty
+        assert "summary" in result.report
+
+    @pytest.mark.asyncio
+    async def test_survivor_mode_in_to_dict(self):
+        pipeline = _make_pipeline()
+        result = await pipeline.run(
+            text="I saw someone enter through the back door around midnight.",
+            mode=PipelineMode.SURVIVOR,
+        )
+        d = result.to_dict()
+        assert d["mode"] == "survivor"
+        assert d["next_question"] is None
+
+
+class TestInvestigatorMode:
+    """Investigator mode runs all stages including conflicts and question."""
+
+    @pytest.mark.asyncio
+    async def test_investigator_is_default(self):
+        pipeline = _make_pipeline()
+        result = await pipeline.run(
+            text="I saw someone enter through the back door around midnight.",
+        )
+        assert result.mode == PipelineMode.INVESTIGATOR
+
+    @pytest.mark.asyncio
+    async def test_investigator_runs_conflicts(self):
+        pipeline = _make_pipeline()
+        result = await pipeline.run(
+            text="I saw someone enter through the back door around midnight.",
+            mode=PipelineMode.INVESTIGATOR,
+        )
+        assert "conflict_count" in result.conflicts
+
+    @pytest.mark.asyncio
+    async def test_investigator_has_next_question(self):
+        pipeline = _make_pipeline()
+        result = await pipeline.run(
+            text="I saw someone enter through the back door around midnight.",
+            mode=PipelineMode.INVESTIGATOR,
+        )
+        assert result.next_question is not None
+        assert "question" in result.next_question
+        assert "reason" in result.next_question
+
+    @pytest.mark.asyncio
+    async def test_investigator_mode_in_to_dict(self):
+        pipeline = _make_pipeline()
+        result = await pipeline.run(
+            text="I saw someone enter through the back door around midnight.",
+            mode=PipelineMode.INVESTIGATOR,
+        )
+        d = result.to_dict()
+        assert d["mode"] == "investigator"
+        assert d["next_question"] is not None
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 12. Multi-witness tests
+# ══════════════════════════════════════════════════════════════════════════════
+
+class TestMultiWitness:
+    """Tests for the new multi-witness pipeline path (testimonies=[...])."""
+
+    @pytest.mark.asyncio
+    async def test_both_witnesses_processed(self):
+        """All witnesses appear in result.testimonies."""
+        pipeline = _make_pipeline()
+        result = await pipeline.run(
+            mode=PipelineMode.INVESTIGATOR,
+            testimonies=[
+                {"witness_id": "Alice", "text": "I entered the building around 9 PM."},
+                {"witness_id": "Bob",   "text": "I arrived closer to 10 PM."},
+            ],
+        )
+        ids = [t["witness_id"] for t in result.testimonies]
+        assert "Alice" in ids
+        assert "Bob" in ids
+
+    @pytest.mark.asyncio
+    async def test_witness_id_stamped_on_events(self):
+        """Every event in result.events carries a witness_id."""
+        pipeline = _make_pipeline()
+        result = await pipeline.run(
+            mode=PipelineMode.INVESTIGATOR,
+            testimonies=[
+                {"witness_id": "Alice", "text": "I entered the building around 9 PM."},
+                {"witness_id": "Bob",   "text": "I arrived closer to 10 PM."},
+            ],
+        )
+        # Every event coming from the multi-witness path must carry attribution.
+        # (Falls-back events from single extraction won't have it, but
+        # per-witness events always do.)
+        for event in result.events:
+            assert "witness_id" in event, f"Event missing witness_id: {event}"
+
+    @pytest.mark.asyncio
+    async def test_testimony_analysis_per_witness(self):
+        """result.testimonies[i]['analysis'] is populated (or empty dict on failure)."""
+        pipeline = _make_pipeline()
+        result = await pipeline.run(
+            mode=PipelineMode.INVESTIGATOR,
+            testimonies=[
+                {"witness_id": "Alice", "text": "I entered the building around 9 PM."},
+            ],
+        )
+        assert isinstance(result.testimonies[0]["analysis"], dict)
+
+    @pytest.mark.asyncio
+    async def test_survivor_mode_no_conflicts(self):
+        """Survivor mode produces empty conflicts even with 2 witnesses."""
+        pipeline = _make_pipeline()
+        result = await pipeline.run(
+            mode=PipelineMode.SURVIVOR,
+            testimonies=[
+                {"witness_id": "Alice", "text": "I entered the building around 9 PM."},
+                {"witness_id": "Bob",   "text": "I arrived closer to 10 PM."},
+            ],
+        )
+        assert result.conflicts.get("conflict_count", 0) == 0
+        assert result.next_question is None
+
+    @pytest.mark.asyncio
+    async def test_investigator_mode_has_conflicts_key(self):
+        """Investigator mode runs conflict detection and returns conflict_count."""
+        pipeline = _make_pipeline()
+        result = await pipeline.run(
+            mode=PipelineMode.INVESTIGATOR,
+            testimonies=[
+                {"witness_id": "Alice", "text": "I entered the building around 9 PM."},
+                {"witness_id": "Bob",   "text": "I arrived closer to 10 PM."},
+            ],
+        )
+        assert "conflict_count" in result.conflicts
+
+    @pytest.mark.asyncio
+    async def test_report_produced(self):
+        """report is always populated in multi-witness mode."""
+        pipeline = _make_pipeline()
+        result = await pipeline.run(
+            mode=PipelineMode.INVESTIGATOR,
+            testimonies=[
+                {"witness_id": "Alice", "text": "I entered the building around 9 PM."},
+            ],
+        )
+        assert result.report
+        assert "summary" in result.report
+
+    @pytest.mark.asyncio
+    async def test_single_witness_testimonies_list(self):
+        """A testimonies list with 1 entry behaves like single-witness."""
+        pipeline = _make_pipeline()
+        result = await pipeline.run(
+            mode=PipelineMode.INVESTIGATOR,
+            testimonies=[
+                {"witness_id": "Solo", "text": "I entered the building around 9 PM."},
+            ],
+        )
+        assert len(result.testimonies) == 1
+        assert result.testimonies[0]["witness_id"] == "Solo"
+
+    @pytest.mark.asyncio
+    async def test_result_has_testimonies_in_to_dict(self):
+        """to_dict() includes the testimonies field."""
+        pipeline = _make_pipeline()
+        result = await pipeline.run(
+            mode=PipelineMode.INVESTIGATOR,
+            testimonies=[
+                {"witness_id": "Alice", "text": "I entered the building around 9 PM."},
+                {"witness_id": "Bob",   "text": "I arrived closer to 10 PM."},
+            ],
+        )
+        d = result.to_dict()
+        assert "testimonies" in d
+        assert len(d["testimonies"]) == 2

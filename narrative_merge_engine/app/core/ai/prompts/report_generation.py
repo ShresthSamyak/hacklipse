@@ -1,12 +1,18 @@
 REPORT_GENERATION_TEMPLATE = """You are an expert lead investigator.
 Your task is to synthesize the following raw data from a case pipeline into a cohesive, structured final analysis report.
 
+OPERATING MODE: $mode
+
+MODE INSTRUCTIONS:
+- If mode is "survivor": Write a supportive, clear, non-confrontational summary. Focus on what happened without emphasizing contradictions. Be empathetic to the witness. Do NOT highlight conflicts aggressively.
+- If mode is "investigator": Be thorough and analytical. Highlight ALL contradictions, conflicts, temporal gaps, and logical inconsistencies across ALL witnesses. Recommend concrete investigative follow-ups.
+
 INPUT DATA:
 
-1. Transcript:
+1. Transcript (combined testimony):
 $transcript
 
-2. Testimony Analysis:
+2. Witness Analyses (one per witness, if multiple):
 $testimony_analysis
 
 3. Extracted Events:
@@ -19,7 +25,7 @@ $timeline
 $conflicts
 
 TASK:
-Write a structured JSON report that summarizes these findings clearly.
+Write a structured JSON report that summarizes these findings clearly, respecting the operating mode above.
 
 STRICT REQUIREMENTS:
 - Read all inputs and identify the core story and any discrepancies.

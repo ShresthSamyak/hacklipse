@@ -18,6 +18,7 @@ from app.api.deps import CurrentUser, DBDep, LLMDep, SttSvc
 from app.core.logging import get_logger
 from app.services.demo_pipeline import (
     DemoPipeline,
+    PipelineMode,
     PipelineResult,
     PipelineStatus,
     _DEMO_SAMPLE_BRANCHES,
@@ -40,6 +41,13 @@ class TextRunRequest(BaseModel):
         min_length=10,
         description="Raw testimony text. Can be messy, uncertain, or multilingual.",
         examples=["I entered around 9, maybe 10 at night... there was someone near the table."],
+    )
+    mode: str = Field(
+        default="investigator",
+        description=(
+            "Pipeline mode: 'survivor' (supportive, no conflicts) "
+            "or 'investigator' (full analysis with conflicts + questions)."
+        ),
     )
     demo_mode: bool = Field(
         default=True,
@@ -65,12 +73,15 @@ class TextRunRequest(BaseModel):
 class PipelineResponse(BaseModel):
     """Structured demo pipeline response."""
     pipeline_id: str
+    mode: str = "investigator"
     transcript: str
     testimony_analysis: dict | None = None
+    testimonies: list[dict] = []   # per-witness [{witness_id, analysis, events}]
     events: list[dict]
     timeline: dict
     conflicts: dict
     report: dict = {}
+    next_question: dict | None = None
     status: str
     errors: list[str]
     stage_timings_ms: dict[str, float]
@@ -78,8 +89,68 @@ class PipelineResponse(BaseModel):
     fast_preview: bool
 
 
+class WitnessTestimony(BaseModel):
+    """A single witness's raw testimony."""
+    witness_id: str = Field(
+        ...,
+        description="Unique identifier for this witness. E.g. 'Witness_A' or 'John'.",
+        min_length=1,
+    )
+    text: str = Field(
+        ...,
+        min_length=10,
+        description="Raw testimony text from this witness.",
+    )
+
+
+class MultiWitnessRequest(BaseModel):
+    """Request body for multi-witness pipeline runs."""
+    mode: str = Field(
+        default="investigator",
+        description="Pipeline mode: 'survivor' or 'investigator'.",
+    )
+    testimonies: list[WitnessTestimony] = Field(
+        ...,
+        min_length=1,
+        description="Array of witness testimonies. Each is processed in parallel.",
+    )
+    demo_mode: bool = Field(default=True)
+    fast_preview: bool = Field(default=False)
+
+
+class MultiWitnessResponse(BaseModel):
+    """Structured response from the multi-witness pipeline."""
+    pipeline_id: str
+    mode: str
+    testimonies: list[dict]        # [{witness_id, analysis, events}]
+    timeline: dict
+    conflicts: dict                # populated in investigator mode only
+    next_question: dict | None = None  # investigator only
+    report: dict
+    status: str
+    errors: list[str]
+    stage_timings_ms: dict[str, float]
+
+
 def _to_response(result: PipelineResult) -> PipelineResponse:
     return PipelineResponse(**result.to_dict())
+
+
+def _to_multi_response(result: PipelineResult) -> MultiWitnessResponse:
+    """Convert a PipelineResult from the multi-witness path to MultiWitnessResponse."""
+    d = result.to_dict()
+    return MultiWitnessResponse(
+        pipeline_id=d["pipeline_id"],
+        mode=d["mode"],
+        testimonies=d["testimonies"],
+        timeline=d["timeline"],
+        conflicts=d["conflicts"],
+        next_question=d.get("next_question"),
+        report=d["report"],
+        status=d["status"],
+        errors=d["errors"],
+        stage_timings_ms=d["stage_timings_ms"],
+    )
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
@@ -104,11 +175,13 @@ async def run_pipeline_audio(
     _user: CurrentUser,
     file: UploadFile | None = File(default=None, description="Optional audio file"),
     text: str = Form(default="", description="Fallback text if no audio provided"),
+    mode: str = Form(default="investigator"),
     demo_mode: bool = Form(default=True),
     fast_preview: bool = Form(default=False),
 ) -> PipelineResponse:
     """Accepts multipart form with optional audio file + text fallback."""
     pipeline = build_pipeline(db=db, llm=llm, stt_svc=stt_svc)
+    pipeline_mode = PipelineMode(mode) if mode in ("survivor", "investigator") else PipelineMode.INVESTIGATOR
 
     audio_bytes: bytes | None = None
     filename = "audio.wav"
@@ -121,6 +194,7 @@ async def run_pipeline_audio(
         audio=audio_bytes,
         filename=filename,
         text=text or None,
+        mode=pipeline_mode,
         demo_mode=demo_mode,
         fast_preview=fast_preview,
     )
@@ -145,8 +219,10 @@ async def run_pipeline_text(
     _user: CurrentUser,
 ) -> PipelineResponse:
     pipeline = build_pipeline(db=db, llm=llm, stt_svc=stt_svc)
+    pipeline_mode = PipelineMode(payload.mode) if payload.mode in ("survivor", "investigator") else PipelineMode.INVESTIGATOR
     result = await pipeline.run(
         text=payload.text,
+        mode=pipeline_mode,
         demo_mode=payload.demo_mode,
         fast_preview=payload.fast_preview,
         branches_override=payload.branches,
@@ -173,13 +249,64 @@ async def run_preview(
     _user: CurrentUser,
 ) -> PipelineResponse:
     pipeline = build_pipeline(db=db, llm=llm, stt_svc=stt_svc)
+    pipeline_mode = PipelineMode(payload.mode) if payload.mode in ("survivor", "investigator") else PipelineMode.INVESTIGATOR
     result = await pipeline.run(
         text=payload.text,
+        mode=pipeline_mode,
         demo_mode=payload.demo_mode,
         fast_preview=True,  # always fast
         branches_override=payload.branches,
     )
     return _to_response(result)
+
+
+@router.post(
+    "/run-multi",
+    response_model=MultiWitnessResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Multi-witness pipeline — parallel testimony analysis + cross-witness conflict detection",
+    description=(
+        "Processes N witnesses in parallel. Each witness gets independent testimony analysis "
+        "and event extraction, with witness attribution preserved in every event. "
+        "In investigator mode: runs cross-witness conflict detection + next question generation. "
+        "In survivor mode: produces a clean merged timeline + soft report only. "
+        "Never crashes — each per-witness stage has timeout protection and a fallback."
+    ),
+)
+async def run_pipeline_multi(
+    payload: MultiWitnessRequest,
+    db: DBDep,
+    llm: LLMDep,
+    stt_svc: SttSvc,
+    _user: CurrentUser,
+) -> MultiWitnessResponse:
+    """
+    Multi-witness pipeline endpoint.
+
+    Accepts a list of witness testimonies and runs the full pipeline
+    with per-witness testimony analysis + event extraction in parallel.
+    """
+    pipeline = build_pipeline(db=db, llm=llm, stt_svc=stt_svc)
+    pipeline_mode = (
+        PipelineMode(payload.mode)
+        if payload.mode in ("survivor", "investigator")
+        else PipelineMode.INVESTIGATOR
+    )
+
+    # Convert Pydantic models → plain dicts for pipeline internal API
+    testimonies = [
+        {"witness_id": w.witness_id, "text": w.text}
+        for w in payload.testimonies
+    ]
+
+    result = await pipeline.run(
+        mode=pipeline_mode,
+        demo_mode=payload.demo_mode,
+        fast_preview=payload.fast_preview,
+        testimonies=testimonies,
+    )
+    return _to_multi_response(result)
+
 
 
 @router.get(
