@@ -1,10 +1,10 @@
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import StepIndicator from '../components/ui/StepIndicator'
 import InputField from '../components/ui/InputField'
 import Button from '../components/ui/Button'
 import AudioRecorder from '../components/testimony/AudioRecorder'
-import { runDemoPipeline } from '../services/api'
+import { transcribeAudio } from '../services/api'
 
 export default function SurvivorPage() {
   const navigate = useNavigate()
@@ -12,6 +12,12 @@ export default function SurvivorPage() {
   const [caseId, setCaseId] = useState('')
   const [incidentDate, setIncidentDate] = useState('')
   const [testimonyText, setTestimonyText] = useState('')
+
+  // Audio state
+  const [audioBlob, setAudioBlob] = useState(null)
+  const [audioLanguage, setAudioLanguage] = useState('')  // '' = auto-detect
+  const [transcribing, setTranscribing] = useState(false)
+  const [transcribeError, setTranscribeError] = useState(null)
 
   // API state
   const [loading, setLoading] = useState(false)
@@ -32,18 +38,95 @@ export default function SurvivorPage() {
     setStep(3)
   }
 
+  // ── Audio ready callback ─────────────────────────────────────────────────────
+  const handleAudioReady = useCallback(async (blob) => {
+    setAudioBlob(blob)
+    setTranscribeError(null)
+    setTranscribing(true)
+
+    try {
+      // Convert blob to File if needed (for the transcribeAudio API)
+      const file = blob instanceof File
+        ? blob
+        : new File([blob], 'recording.webm', { type: blob.type || 'audio/webm' })
+
+      const result = await transcribeAudio(file, audioLanguage)
+      const transcribedText = result?.text || result?.transcript || ''
+
+      if (transcribedText.trim()) {
+        // Append to existing text (user might have typed + recorded)
+        setTestimonyText(prev =>
+          prev.trim() ? `${prev}\n\n[Audio Transcript]\n${transcribedText}` : transcribedText
+        )
+      } else {
+        setTranscribeError('Audio was processed but no speech was detected. Please try again.')
+      }
+    } catch (err) {
+      console.error('Transcription failed:', err)
+      setTranscribeError(`Transcription failed: ${err.message}. You can still submit with audio directly.`)
+    } finally {
+      setTranscribing(false)
+    }
+  }, [audioLanguage])
+
+  // ── Submit handler ───────────────────────────────────────────────────────────
   const handleSubmit = async (e) => {
     e.preventDefault()
-    if (!testimonyText.trim()) return alert('Please provide your testimony (text or audio)')
+    if (!testimonyText.trim() && !audioBlob) {
+      return alert('Please provide your testimony (type text, record audio, or upload an audio file)')
+    }
 
     setLoading(true)
     setError(null)
 
     try {
-      const data = await runDemoPipeline(testimonyText, {
-        fastPreview: false,
-        demoMode: true,
-      })
+      let data
+
+      if (audioBlob && !testimonyText.trim()) {
+        // Audio-only submission: send audio directly via FormData to /demo/run
+        const formData = new FormData()
+        const file = audioBlob instanceof File
+          ? audioBlob
+          : new File([audioBlob], 'recording.webm', { type: audioBlob.type || 'audio/webm' })
+        formData.append('file', file)
+        formData.append('mode', 'survivor')
+        formData.append('demo_mode', 'true')
+        formData.append('fast_preview', 'false')
+
+        const response = await fetch('/api/v1/demo/run', {
+          method: 'POST',
+          headers: { Authorization: 'Bearer test' },
+          body: formData,
+        })
+
+        if (!response.ok) {
+          const errBody = await response.json().catch(() => ({}))
+          throw new Error(errBody?.detail || `Server error ${response.status}`)
+        }
+        data = await response.json()
+      } else {
+        // Text submission (may include transcribed audio text)
+        const response = await fetch('/api/v1/demo/run-text', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: 'Bearer test',
+          },
+          body: JSON.stringify({
+            text: testimonyText,
+            mode: 'survivor',
+            demo_mode: true,
+            fast_preview: false,
+          }),
+        })
+
+        if (!response.ok) {
+          const errBody = await response.json().catch(() => ({}))
+          throw new Error(errBody?.detail || `Server error ${response.status}`)
+        }
+        data = await response.json()
+      }
+
       // Store in localStorage so Investigator can read it
       localStorage.setItem('lastPipelineResult', JSON.stringify(data))
       localStorage.setItem('currentCase', caseId)
@@ -114,7 +197,7 @@ export default function SurvivorPage() {
                   pipelineStatus === 'partial' ? 'bg-amber-100 text-amber-700' :
                   'bg-red-100 text-red-700'
                 }`}>
-                  {pipelineStatus.toUpperCase()}
+                  {pipelineStatus?.toUpperCase() || 'UNKNOWN'}
                 </span>
               </div>
             </div>
@@ -256,15 +339,54 @@ export default function SurvivorPage() {
                 />
 
                 <div className="border-t border-[#C3CC9B] pt-4 mt-4">
-                  <h3 className="font-semibold text-[#2d3a2d] mb-3">Or Record Audio</h3>
-                  <AudioRecorder waveSize="sm" />
+                  <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+                    <h3 className="font-semibold text-[#2d3a2d]">Or Record / Upload Audio</h3>
+                    {/* Language selector */}
+                    <div className="flex items-center gap-2">
+                      <label htmlFor="audio-language" className="text-xs text-gray-500">
+                        <i className="fas fa-language mr-1" />Language:
+                      </label>
+                      <select
+                        id="audio-language"
+                        value={audioLanguage}
+                        onChange={(e) => setAudioLanguage(e.target.value)}
+                        className="text-xs border border-gray-300 rounded-lg px-2 py-1.5 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#9AB17A] focus:border-[#9AB17A]"
+                      >
+                        <option value="">Auto-detect</option>
+                        <option value="en">English</option>
+                        <option value="hi">हिन्दी (Hindi)</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <AudioRecorder waveSize="sm" onAudioReady={handleAudioReady} />
+
+                  {/* Transcription status */}
+                  {transcribing && (
+                    <div className="mt-3 flex items-center gap-2 text-sm text-[#9AB17A]">
+                      <div className="w-4 h-4 border-2 border-[#9AB17A] border-t-transparent rounded-full animate-spin" />
+                      Transcribing audio… Your text will appear above when ready.
+                    </div>
+                  )}
+                  {transcribeError && (
+                    <div className="mt-3 bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-700">
+                      <i className="fas fa-triangle-exclamation mr-1" />
+                      {transcribeError}
+                    </div>
+                  )}
+                  {audioBlob && !transcribing && !transcribeError && (
+                    <div className="mt-3 flex items-center gap-2 text-sm text-green-700">
+                      <i className="fas fa-check-circle" />
+                      Audio captured & transcribed successfully.
+                    </div>
+                  )}
                 </div>
 
                 <div className="flex gap-3 mt-6">
                   <Button variant="secondary" fullWidth type="button" onClick={() => goToStep(2)}>
                     <i className="fas fa-arrow-left mr-2" aria-hidden="true" /> Back
                   </Button>
-                  <Button variant="primary" fullWidth type="submit">
+                  <Button variant="primary" fullWidth type="submit" disabled={transcribing}>
                     <i className="fas fa-check mr-2" aria-hidden="true" /> Submit Testimony
                   </Button>
                 </div>

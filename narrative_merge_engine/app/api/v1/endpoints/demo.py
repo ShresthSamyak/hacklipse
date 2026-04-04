@@ -82,6 +82,9 @@ class PipelineResponse(BaseModel):
     conflicts: dict
     report: dict = {}
     next_question: dict | None = None
+    risk_assessment: dict | None = None
+    safety_flag: bool = False
+    safety_reason: str | None = None
     status: str
     errors: list[str]
     stage_timings_ms: dict[str, float]
@@ -128,6 +131,9 @@ class MultiWitnessResponse(BaseModel):
     conflicts: dict                # populated in investigator mode only
     next_question: dict | None = None  # investigator only
     report: dict
+    risk_assessment: dict | None = None
+    safety_flag: bool = False
+    safety_reason: str | None = None
     status: str
     errors: list[str]
     stage_timings_ms: dict[str, float]
@@ -287,7 +293,30 @@ async def run_pipeline_multi(
 
     Accepts a list of witness testimonies and runs the full pipeline
     with per-witness testimony analysis + event extraction in parallel.
+
+    Safety: each testimony is screened before processing. Blocked inputs
+    are refused immediately.
     """
+    from app.services.safety_evaluation_service import evaluate_safety, SafetyCategory
+
+    # ── Safety screening for each testimony ───────────────────────────────
+    for w in payload.testimonies:
+        safety = evaluate_safety(w.text)
+        if safety.category == SafetyCategory.BLOCKED:
+            from fastapi import HTTPException
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={
+                    "error": "safety_blocked",
+                    "witness_id": w.witness_id,
+                    "reason": safety.reason,
+                    "message": (
+                        f"Testimony from {w.witness_id} was blocked by the safety "
+                        f"evaluation layer: {safety.reason}"
+                    ),
+                },
+            )
+
     pipeline = build_pipeline(db=db, llm=llm, stt_svc=stt_svc)
     pipeline_mode = (
         PipelineMode(payload.mode)

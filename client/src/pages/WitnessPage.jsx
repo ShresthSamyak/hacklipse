@@ -1,9 +1,9 @@
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import InputField from '../components/ui/InputField'
 import Button from '../components/ui/Button'
 import AudioRecorder from '../components/testimony/AudioRecorder'
-import { submitWitnessTestimony } from '../shared/api/witnessService'
+import { transcribeAudio } from '../services/api'
 
 export default function WitnessPage() {
   const navigate = useNavigate()
@@ -12,6 +12,11 @@ export default function WitnessPage() {
   const [incidentDate, setIncidentDate] = useState('')
   const [statementText, setStatementText] = useState('')
   const [audioFile, setAudioFile] = useState(null)
+
+  // Bilingual support
+  const [audioLanguage, setAudioLanguage] = useState('')  // '' = auto-detect
+  const [transcribing, setTranscribing] = useState(false)
+  const [transcribeError, setTranscribeError] = useState(null)
 
   // API state
   const [loading, setLoading] = useState(false)
@@ -26,6 +31,35 @@ export default function WitnessPage() {
     setStep(2)
   }
 
+  // ── Audio ready callback — transcribe immediately ────────────────────────────
+  const handleAudioReady = useCallback(async (blob) => {
+    setAudioFile(blob)
+    setTranscribeError(null)
+    setTranscribing(true)
+
+    try {
+      const file = blob instanceof File
+        ? blob
+        : new File([blob], 'recording.webm', { type: blob.type || 'audio/webm' })
+
+      const result = await transcribeAudio(file, audioLanguage)
+      const transcribedText = result?.text || result?.transcript || ''
+
+      if (transcribedText.trim()) {
+        setStatementText(prev =>
+          prev.trim() ? `${prev}\n\n[Audio Transcript]\n${transcribedText}` : transcribedText
+        )
+      } else {
+        setTranscribeError('Audio was processed but no speech was detected. Please try again.')
+      }
+    } catch (err) {
+      console.error('Transcription failed:', err)
+      setTranscribeError(`Transcription failed: ${err.message}. You can still type your statement.`)
+    } finally {
+      setTranscribing(false)
+    }
+  }, [audioLanguage])
+
   const handleSubmit = async (e) => {
     e.preventDefault()
     if (!statementText.trim() && !audioFile) return alert('Please provide your statement (text or audio)')
@@ -34,11 +68,38 @@ export default function WitnessPage() {
     setError(null)
 
     try {
-      const data = await submitWitnessTestimony({
-        case_id: caseNumber,
-        text: statementText,
-        audioFile,
+      // Build FormData for /demo/run (supports both audio + text)
+      const formData = new FormData()
+
+      if (audioFile && !statementText.trim()) {
+        // Audio-only: send raw audio file
+        const file = audioFile instanceof File
+          ? audioFile
+          : new File([audioFile], 'recording.webm', { type: audioFile.type || 'audio/webm' })
+        formData.append('file', file)
+      } else {
+        // Text (possibly including transcribed audio)
+        formData.append('text', statementText)
+      }
+
+      formData.append('mode', 'survivor')
+      formData.append('demo_mode', 'true')
+      formData.append('fast_preview', 'false')
+
+      if (caseNumber) formData.append('case_id', caseNumber)
+
+      const response = await fetch('/api/v1/demo/run', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer test' },
+        body: formData,
       })
+
+      if (!response.ok) {
+        const errBody = await response.json().catch(() => ({}))
+        throw new Error(errBody?.detail || `Server error ${response.status}`)
+      }
+
+      const data = await response.json()
       localStorage.setItem('lastPipelineResult', JSON.stringify(data))
       localStorage.setItem('currentCase', caseNumber)
       setResult(data)
@@ -206,14 +267,53 @@ export default function WitnessPage() {
                 rows={8}
               />
 
-              <div className="text-center py-4">
-                <p className="text-sm text-gray-600 mb-4">Or record your statement</p>
-                <AudioRecorder waveSize="lg" onAudioReady={setAudioFile} />
+              <div className="border-t border-[#C3CC9B] pt-4">
+                <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+                  <p className="text-sm text-gray-600 font-semibold">Or record your statement</p>
+                  {/* Language selector */}
+                  <div className="flex items-center gap-2">
+                    <label htmlFor="witness-audio-language" className="text-xs text-gray-500">
+                      <i className="fas fa-language mr-1" />Language:
+                    </label>
+                    <select
+                      id="witness-audio-language"
+                      value={audioLanguage}
+                      onChange={(e) => setAudioLanguage(e.target.value)}
+                      className="text-xs border border-gray-300 rounded-lg px-2 py-1.5 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#9AB17A] focus:border-[#9AB17A]"
+                    >
+                      <option value="">Auto-detect</option>
+                      <option value="en">English</option>
+                      <option value="hi">हिन्दी (Hindi)</option>
+                    </select>
+                  </div>
+                </div>
+
+                <AudioRecorder waveSize="lg" onAudioReady={handleAudioReady} />
+
+                {/* Transcription status */}
+                {transcribing && (
+                  <div className="mt-3 flex items-center gap-2 text-sm text-[#9AB17A]">
+                    <div className="w-4 h-4 border-2 border-[#9AB17A] border-t-transparent rounded-full animate-spin" />
+                    Transcribing audio… Your text will appear above when ready.
+                  </div>
+                )}
+                {transcribeError && (
+                  <div className="mt-3 bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-700">
+                    <i className="fas fa-triangle-exclamation mr-1" />
+                    {transcribeError}
+                  </div>
+                )}
+                {audioFile && !transcribing && !transcribeError && (
+                  <div className="mt-3 flex items-center gap-2 text-sm text-green-700">
+                    <i className="fas fa-check-circle" />
+                    Audio captured & transcribed successfully.
+                  </div>
+                )}
               </div>
 
               <div className="flex gap-4">
                 <Button variant="secondary" fullWidth type="button" onClick={() => setStep(1)}>Back</Button>
-                <Button variant="primary" fullWidth type="submit">Submit Statement</Button>
+                <Button variant="primary" fullWidth type="submit" disabled={transcribing}>Submit Statement</Button>
               </div>
             </form>
           )}

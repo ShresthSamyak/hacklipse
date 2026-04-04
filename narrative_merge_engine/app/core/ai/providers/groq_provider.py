@@ -93,10 +93,16 @@ class GroqProvider(BaseLLMProvider):
                 **extra,
             )
             choice = response.choices[0]
+            usage_dict = {}
+            if response.usage:
+                if hasattr(response.usage, "model_dump"):
+                    usage_dict = response.usage.model_dump()
+                else:
+                    usage_dict = dict(response.usage)
             return LLMResponse(
                 content=choice.message.content or "",
                 model=response.model,
-                usage=dict(response.usage) if response.usage else {},
+                usage=usage_dict,
                 raw=response.model_dump(),
             )
         except Exception as exc:

@@ -124,9 +124,73 @@ function MessageBubble({ msg }) {
             : '0 2px 8px rgba(0,0,0,0.2)',
           whiteSpace: 'pre-wrap',
           wordBreak: 'break-word',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 6
         }}
       >
-        {msg.text}
+        <div>{msg.text}</div>
+
+        {/* Evidence Block (AI only) */}
+        {!isUser && msg.evidence && msg.evidence.length > 0 && (
+          <div style={{
+            marginTop: 8,
+            paddingTop: 8,
+            borderTop: `1px solid ${COLORS.border}`,
+            fontSize: 11,
+            color: COLORS.muted
+          }}>
+            <div style={{ fontWeight: 600, color: '#8b949e', marginBottom: 4 }}>
+              <i className="fas fa-microscope mr-1.5" /> Based on:
+            </div>
+            <ul style={{ margin: 0, paddingLeft: 18, display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {msg.evidence.map((ev, idx) => (
+                <li key={idx} style={{ lineHeight: 1.4, color: '#a5c8f5' }}>{ev}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {/* Confidence Badge (AI only) */}
+        {!isUser && msg.confidence && (
+        <><div style={{
+            alignSelf: 'flex-start',
+            fontSize: 10,
+            fontFamily: 'monospace',
+            padding: '2px 8px',
+            borderRadius: 12,
+            background: msg.confidence === 'high' ? '#1f3322' : 
+                        msg.confidence === 'medium' ? '#332912' : '#331616',
+            color: msg.confidence === 'high' ? '#3fb950' : 
+                   msg.confidence === 'medium' ? '#d29922' : '#f85149',
+            border: `1px solid ${
+              msg.confidence === 'high' ? '#3fb95044' : 
+              msg.confidence === 'medium' ? '#d2992244' : '#f8514944'
+            }`,
+            marginTop: 4
+          }}>
+            <i className={`fas mr-1 text-[9px] ${
+              msg.confidence === 'high' ? 'fa-check-circle' :
+              msg.confidence === 'medium' ? 'fa-triangle-exclamation' : 'fa-circle-xmark'
+            }`}></i>
+            Confidence: {msg.confidence?.toUpperCase() || 'UNKNOWN'}
+          </div>
+          <div style={{
+            width: 100, height: 6, borderRadius: 4, marginTop: 4,
+            background: '#30363d',
+            overflow: 'hidden'
+          }}>
+            <div style={{
+              height: '100%',
+              width: msg.confidence === 'high' ? '100%' : 
+                     msg.confidence === 'medium' ? '60%' : '30%',
+              background: msg.confidence === 'high' ? '#3fb950' : 
+                          msg.confidence === 'medium' ? '#d29922' : '#f85149',
+              transition: 'width 0.6s ease-out'
+            }} />
+          </div>
+        </>
+        )}
       </div>
 
       {/* Avatar right (user) */}
@@ -240,7 +304,12 @@ export default function ChatPanel({ result }) {
         query,
         context: buildContext(),
       })
-      setMessages(prev => [...prev, { role: 'assistant', text: data.answer }])
+      setMessages(prev => [...prev, { 
+        role: 'assistant', 
+        text: data.answer, 
+        confidence: data.confidence,
+        evidence: data.evidence || [] 
+      }])
     } catch (err) {
       setError(err.message || 'Failed to get a response. Is the backend running?')
     } finally {
@@ -350,10 +419,59 @@ export default function ChatPanel({ result }) {
           <div ref={bottomRef} />
         </div>
 
+        {/* ── Suggested Questions Quick Clicks ── */}
+        {hasResult && !loading && (
+          <div style={{
+            padding: '8px 14px',
+            display: 'flex',
+            gap: 8,
+            overflowX: 'auto',
+            scrollbarWidth: 'none',
+            background: COLORS.surface,
+            borderTop: `1px solid ${COLORS.border}`,
+          }}>
+            {[
+              typeof result?.next_question === 'string' ? result.next_question : 
+                (result?.next_question?.question || result?.next_question?.suggested_question || null),
+              "Where is the main conflict?",
+              "Which witness is more reliable?",
+              "What is uncertain?"
+            ].filter(Boolean).slice(0, 3).map((q, idx) => (
+              <button
+                key={idx}
+                onClick={() => { setInput(q); handleSend(q); }}
+                style={{
+                  whiteSpace: 'nowrap',
+                  background: COLORS.bg,
+                  border: `1px solid ${COLORS.border}`,
+                  borderRadius: 14,
+                  padding: '6px 12px',
+                  color: COLORS.accent,
+                  fontSize: 11,
+                  fontFamily: 'system-ui, sans-serif',
+                  cursor: 'pointer',
+                  flexShrink: 0,
+                  transition: 'all 0.2s'
+                }}
+                onMouseOver={e => {
+                  e.currentTarget.style.borderColor = COLORS.accent
+                  e.currentTarget.style.background = '#1f3a5f'
+                }}
+                onMouseOut={e => {
+                  e.currentTarget.style.borderColor = COLORS.border
+                  e.currentTarget.style.background = COLORS.bg
+                }}
+              >
+                {q}
+              </button>
+            ))}
+          </div>
+        )}
+
         {/* ── Input row ── */}
         <div style={{
           padding: '10px 14px',
-          borderTop: `1px solid ${COLORS.border}`,
+          borderTop: hasResult ? 'none' : `1px solid ${COLORS.border}`,
           display: 'flex',
           gap: 8,
           background: COLORS.surface,

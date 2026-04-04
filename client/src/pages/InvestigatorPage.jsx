@@ -153,14 +153,22 @@ export default function InvestigatorPage() {
 
   // ── Derived data ───────────────────────────────────────────────────────────
   const stats   = deriveStats(result)
-  const events  = result?.timeline?.events || []
+  // Use only grounded events for display — filter out hallucinated ones
+  const rawEvents = result?.timeline?.events || []
+  const events = rawEvents.filter(e => e.grounded !== false)
   const conflictsData = result?.conflicts?.conflicts || []
   // Ensure conflicts and next_question refer strictly to the exact path
   const conflictsObj = result?.conflicts ?? null
   const pipelineStatus = result?.status ?? null
+  const groundingStats = result?.grounding_stats ?? null
+  const risk = result?.risk_assessment ?? null
+  const safetyFlag = result?.safety_flag ?? false
 
   if (result) {
     console.log("PIPELINE RESULT:", result)
+    if (groundingStats) {
+      console.log("GROUNDING STATS:", groundingStats)
+    }
   }
 
   // ── Render ─────────────────────────────────────────────────────────────────
@@ -259,15 +267,56 @@ export default function InvestigatorPage() {
                   pipelineStatus === 'success'  ? 'bg-green-50 border-green-300 text-green-700' :
                   pipelineStatus === 'partial'  ? 'bg-amber-50 border-amber-300 text-amber-700' :
                   pipelineStatus === 'fallback' ? 'bg-blue-50  border-blue-300  text-blue-700'  :
+                  pipelineStatus === 'blocked'  ? 'bg-red-100  border-red-400   text-red-800'   :
                                                   'bg-red-50   border-red-300   text-red-700'
                 }`}>
+                  <i className={`fas mr-1.5 ${pipelineStatus === 'blocked' ? 'fa-ban' : 'fa-server'}`}></i>
                   Pipeline: {pipelineStatus.toUpperCase()}
+                </span>
+              )}
+
+              {safetyFlag && (
+                <span 
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-mono font-semibold border bg-yellow-50 border-yellow-400 text-yellow-800 group relative cursor-help"
+                >
+                  <span>⚠️ Sensitive Input Detected</span>
+                  
+                  {/* Tooltip on hover */}
+                  <div className="absolute top-full mt-2 left-1/2 -translate-x-1/2 min-w-48 max-w-64 z-[100] hidden group-hover:block bg-gray-900 text-white text-xs p-2 rounded shadow-xl pointer-events-none whitespace-normal text-center">
+                    {result?.safety_reason || "Sensitive material was evaluated and processed securely."}
+                  </div>
+                </span>
+              )}
+
+              {risk && (
+                <span 
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-mono font-semibold border group relative cursor-help ${
+                    risk.risk_level === 'low'    ? 'bg-green-50 border-green-300 text-green-700' :
+                    risk.risk_level === 'medium' ? 'bg-amber-50 border-amber-300 text-amber-700' :
+                                                   'bg-red-50   border-red-300   text-red-700'
+                  }`}
+                  title={risk.explanation}
+                >
+                  <i className={`fas ${
+                    risk.risk_level === 'low'    ? 'fa-shield-check' :
+                    risk.risk_level === 'medium' ? 'fa-triangle-exclamation' :
+                                                   'fa-skull-crossbones'
+                  }`} />
+                  Risk: {risk.risk_level?.toUpperCase() || 'UNKNOWN'}
+                  
+                  {/* Tooltip on hover */}
+                  <div className="absolute top-full mt-2 left-1/2 -translate-x-1/2 min-w-48 max-w-64 z-[100] hidden group-hover:block bg-gray-900 text-white text-xs p-2 rounded shadow-xl pointer-events-none whitespace-normal text-center">
+                    <div className="font-semibold mb-1">{risk.explanation}</div>
+                    {risk.recommendation && (
+                      <div className="text-gray-300 italic">{risk.recommendation}</div>
+                    )}
+                  </div>
                 </span>
               )}
             </div>
 
             {/* Error banner */}
-            {error && (
+            {error && result?.status !== "blocked" && (
               <div className="mt-4 bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-700 flex items-start gap-3">
                 <i className="fas fa-circle-exclamation text-red-400 mt-0.5" aria-hidden="true" />
                 <div>
@@ -275,6 +324,45 @@ export default function InvestigatorPage() {
                   {backendOk === false && (
                     <><br /><span className="text-xs text-red-500">Backend appears offline at http://localhost:8000 — use "Load Sample" for demo data.</span></>
                   )}
+                </div>
+              </div>
+            )}
+
+            {/* Blocked banner */}
+            {result?.status === "blocked" && (
+              <div className="mt-4 bg-red-100 border border-red-400 rounded-xl p-4 text-sm text-red-800 flex items-start gap-4 shadow-sm">
+                <i className="fas fa-shield-slash mt-1 text-xl text-red-600" aria-hidden="true" />
+                <div>
+                  <strong className="text-base">⚠️ Input blocked due to safety concerns</strong>
+                  <div className="mt-1 text-red-700 font-medium">
+                    {result?.safety_reason || result?.errors?.[0] || 'The safety evaluation layer prevented this execution.'}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Recommended Action Panel */}
+            {risk?.recommendation && result?.status !== "blocked" && (
+              <div className="mt-6 bg-gray-900 border border-gray-700 rounded-xl p-5 shadow-inner flex items-start gap-4 transition-all hover:border-gray-600">
+                <div className={`mt-0.5 text-2xl ${
+                  risk.risk_level === 'low'    ? 'text-green-500' :
+                  risk.risk_level === 'medium' ? 'text-yellow-500' : 
+                                                 'text-red-500'
+                }`}>
+                  <i className={`fas ${
+                    risk.risk_level === 'low'    ? 'fa-circle-check' :
+                                                   'fa-triangle-exclamation'
+                  }`} />
+                </div>
+                <div>
+                  <h4 className="text-gray-400 text-xs font-bold uppercase tracking-wider mb-1.5">Recommended Action</h4>
+                  <div className={`text-base font-medium leading-relaxed ${
+                    risk.risk_level === 'low'    ? 'text-green-400' :
+                    risk.risk_level === 'medium' ? 'text-yellow-400' : 
+                                                 'text-red-400'
+                  }`}>
+                    {risk.recommendation}
+                  </div>
                 </div>
               </div>
             )}
@@ -375,15 +463,35 @@ export default function InvestigatorPage() {
               aria-label="Event Timeline"
               className="bg-white/85 backdrop-blur-md border border-[#C3CC9B] rounded-2xl p-8 shadow-[0_8px_32px_rgba(154,177,122,0.1)]"
             >
-              <h3 className="text-xl font-bold text-gray-800 mb-6 flex items-center gap-3 font-serif-display">
+              <h3 className="text-xl font-bold text-gray-800 mb-6 flex items-center gap-3 font-serif-display flex-wrap">
                 <i className="fas fa-timeline text-[#9AB17A]" aria-hidden="true" />
                 Event Timeline
                 {result && (
                   <span className="ml-auto text-xs font-mono-code text-gray-500 font-normal">
                     {events.length} event{events.length !== 1 ? 's' : ''}
+                    {groundingStats?.ungrounded_count > 0 && (
+                      <span className="ml-2 text-amber-600">
+                        ({groundingStats.ungrounded_count} hallucinated removed)
+                      </span>
+                    )}
                   </span>
                 )}
               </h3>
+              {groundingStats && groundingStats.total_events > 0 && (
+                <div className={`mb-4 px-3 py-2 rounded-lg text-xs font-mono-code flex items-center gap-2 ${
+                  groundingStats.grounding_rate >= 0.9
+                    ? 'bg-green-50 border border-green-200 text-green-700'
+                    : groundingStats.grounding_rate >= 0.6
+                    ? 'bg-amber-50 border border-amber-200 text-amber-700'
+                    : 'bg-red-50 border border-red-200 text-red-700'
+                }`}>
+                  <i className={`fas ${groundingStats.grounding_rate >= 0.9 ? 'fa-check-circle' : 'fa-shield-halved'}`} />
+                  Grounding: {Math.round(groundingStats.grounding_rate * 100)}% verified
+                  <span className="text-gray-500 ml-1">
+                    ({groundingStats.grounded_count}/{groundingStats.total_events} events backed by testimony)
+                  </span>
+                </div>
+              )}
               <EventTimeline events={events} loading={loading} />
             </section>
 

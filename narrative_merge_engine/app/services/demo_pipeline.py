@@ -73,16 +73,19 @@ from app.services.report_generation_service import generate_final_report
 from app.services.speech_to_text_service import SpeechToTextService, TranscriptResult
 from app.services.timeline_reconstruction_service import TimelineReconstructionService
 from app.services.testimony_analysis_service import analyze_testimony_sensitivity
+from app.services.grounding_validation_service import ground_events
+from app.services.safety_evaluation_service import precheck_input
+from app.services.risk_scoring_service import evaluate_pipeline_risk, generate_recommendation
 
 logger = get_logger(__name__)
 
 
 # ─── Stage timeouts (seconds) ────────────────────────────────────────────────
 
-_TIMEOUT_STT = 20          # Whisper is fast; generous margin for network
-_TIMEOUT_EXTRACTION = 25   # 70B model; extended to allow SDK native retries
-_TIMEOUT_TIMELINE = 20     # reasoning can be verbose
-_TIMEOUT_CONFLICTS = 18    # strict mode is lean
+_TIMEOUT_STT = 30          # Whisper is fast; generous margin for network
+_TIMEOUT_EXTRACTION = 45   # Allow time for model inference + SDK native retries
+_TIMEOUT_TIMELINE = 40     # reasoning can be verbose
+_TIMEOUT_CONFLICTS = 40    # strict mode conflict comparison needs time
 
 # Retry budget: 0 extra attempts. 
 # (The Groq SDK itself handles exponential backoff for 429/503 errors natively)
@@ -95,6 +98,7 @@ class PipelineStatus(str, Enum):
     SUCCESS  = "success"   # all stages nominal
     PARTIAL  = "partial"   # ≥1 stage used fallback but output is usable
     FALLBACK = "fallback"  # multiple failures; output is minimal
+    BLOCKED  = "blocked"   # input blocked by safety layer
 
 
 class PipelineMode(str, Enum):
@@ -121,7 +125,11 @@ class PipelineResult:
     timeline: dict = field(default_factory=dict)
     conflicts: dict = field(default_factory=dict)
     report: dict = field(default_factory=dict)
+    grounding_stats: dict = field(default_factory=dict)  # grounding validation metrics
+    risk_assessment: dict | None = None
     next_question: dict | None = None
+    safety_flag: bool = False
+    safety_reason: str | None = None
 
     # Pipeline metadata
     mode: PipelineMode = PipelineMode.INVESTIGATOR
@@ -138,12 +146,16 @@ class PipelineResult:
             "mode": self.mode.value,
             "transcript": self.transcript,
             "testimony_analysis": self.testimony_analysis,
+            "grounding_stats": self.grounding_stats,
             "testimonies": self.testimonies,
             "events": self.events,
             "timeline": self.timeline,
             "conflicts": self.conflicts,
             "report": self.report,
+            "risk_assessment": self.risk_assessment,
             "next_question": self.next_question,
+            "safety_flag": self.safety_flag,
+            "safety_reason": self.safety_reason,
             "status": self.status.value,
             "errors": self.errors,
             "stage_timings_ms": self.stage_timings,
@@ -260,6 +272,31 @@ class DemoPipeline:
             result.transcript = _DEMO_SAMPLE_TRANSCRIPT
             result.status = PipelineStatus.PARTIAL
 
+        # ── Pre-pipeline Safety Check ─────────────────────────────────────────
+        all_text = result.transcript
+        if testimonies:
+            all_text += " " + " ".join(w["text"] for w in testimonies if "text" in w)
+        if branches_override:
+            all_text += " " + " ".join(branches_override.values())
+
+        precheck = precheck_input(all_text)
+        if not precheck["allowed"]:
+            result.status = PipelineStatus.BLOCKED
+            result.errors.append(f"Input flagged by safety layer: {precheck['reason']}")
+            # Log the block and return early
+            logger.warning(
+                "Pipeline blocked by safety layer",
+                pipeline_id=result.pipeline_id,
+                reason=precheck["reason"]
+            )
+            total_ms = round((time.monotonic() - pipeline_start) * 1000, 1)
+            result.stage_timings["total_ms"] = total_ms
+            return result
+
+        if precheck["risk"] == "medium":
+            result.safety_flag = True
+            result.safety_reason = precheck["reason"]
+
         # ── Stage 2: Event Extraction ─────────────────────────────────────────
         if testimonies:
             # ── NEW: Multi-witness path — parallel per-witness analysis + extraction ──
@@ -344,7 +381,40 @@ class DemoPipeline:
             events_by_branch = {"Witness_A": all_events}
             all_analyses = [result.testimony_analysis] if result.testimony_analysis else []
 
-        result.events = all_events
+        # ── Grounding validation: remove hallucinated events ─────────────
+        testimony_source = result.transcript or ""
+        if testimonies:
+            testimony_source = " ".join(w["text"] for w in testimonies)
+
+        grounded_events, all_flagged_events, grounding_stats = ground_events(
+            all_events, testimony_source
+        )
+        result.grounding_stats = grounding_stats
+
+        if grounding_stats.get("ungrounded_count", 0) > 0:
+            result.errors.append(
+                f"Grounding: {grounding_stats['ungrounded_count']} hallucinated event(s) "
+                f"removed (grounding rate: {grounding_stats['grounding_rate']:.0%})."
+            )
+
+        logger.info(
+            "Grounding validation applied",
+            pipeline_id=result.pipeline_id,
+            total=grounding_stats.get("total_events", 0),
+            grounded=grounding_stats.get("grounded_count", 0),
+            removed=grounding_stats.get("ungrounded_count", 0),
+        )
+
+        # Use only grounded events for downstream stages
+        all_events = grounded_events
+        result.events = all_flagged_events  # preserve all with flags for transparency
+
+        # Update per-witness branches to only contain grounded events
+        grounded_ids = {e["id"] for e in grounded_events if "id" in e}
+        events_by_branch = {
+            branch: [e for e in evts if e.get("id") in grounded_ids]
+            for branch, evts in events_by_branch.items()
+        }
 
         if fast_preview:
             # ── Fast path: skip timeline reasoning ───────────────────────────
@@ -435,6 +505,27 @@ class DemoPipeline:
             conflicts=conflict_result.conflict_count,
             errors=len(result.errors),
         )
+
+        # ── Assess Risk ──────────────────────────────────────────────────────
+        risk_data = evaluate_pipeline_risk(result)
+        
+        # Calculate params for recommendation
+        num_conflicts = 0
+        if isinstance(result.conflicts, dict):
+            num_conflicts = len(result.conflicts.get("conflicts", []))
+            
+        num_uncertain = 0
+        if isinstance(result.timeline, dict):
+            num_uncertain = len(result.timeline.get("uncertain_events", []))
+            
+        rec_data = generate_recommendation(
+            risk=risk_data["risk_level"],
+            conflicts=num_conflicts,
+            uncertainty=num_uncertain,
+            safety_flag=result.safety_flag
+        )
+        risk_data["recommendation"] = rec_data["recommendation"]
+        result.risk_assessment = risk_data
 
         return result
 
@@ -833,7 +924,7 @@ class DemoPipeline:
                     events=events,
                     testimony_analysis=testimony_analysis,
                 ),
-                timeout=8,
+                timeout=25,
             )
             elapsed = round((time.monotonic() - stage_start) * 1000, 1)
             result.stage_timings["next_question_ms"] = elapsed
@@ -892,7 +983,7 @@ class DemoPipeline:
                     conflicts=conflicts,
                     mode=mode,
                 ),
-                timeout=20,
+                timeout=45,
             )
             elapsed = round((time.monotonic() - stage_start) * 1000, 1)
             result.stage_timings["report_ms"] = elapsed

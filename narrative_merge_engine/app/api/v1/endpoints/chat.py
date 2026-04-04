@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field
 from app.api.deps import CurrentUser, LLMDep
 from app.core.ai.base_provider import LLMMessage, LLMRequest
 from app.core.logging import get_logger
+from app.services.safety_evaluation_service import SafetyCategory, evaluate_and_rewrite
 
 logger = get_logger(__name__)
 
@@ -41,7 +42,10 @@ class ChatRequest(BaseModel):
 
 class ChatResponse(BaseModel):
     answer: str
+    confidence: str = "medium"
+    evidence: list[str] = Field(default_factory=list)
     role:   str = "assistant"
+    safety: dict | None = None  # included when safety flagged something
 
 
 # ── System prompt ─────────────────────────────────────────────────────────────
@@ -49,20 +53,20 @@ class ChatResponse(BaseModel):
 _SYSTEM_PROMPT = """\
 You are an expert forensic investigation assistant for the Narrative Merge Engine.
 
-You help investigators understand testimony evidence by answering their questions
-clearly and accurately.
-
 STRICT RULES:
-1. ONLY use information explicitly provided in the context below.
-2. DO NOT fabricate facts, events, timestamps, or witness statements.
-3. If the context does not contain enough information to answer, say so clearly:
-   "The available evidence does not provide enough information to answer this."
-4. Be concise but thorough. Use bullet points for lists of facts.
-5. Reference witnesses by name when citing specific evidence.
-6. When discussing conflicts, explain WHAT differs and BETWEEN WHICH witnesses.
+1. Answer ONLY using provided case context.
+2. DO NOT hallucinate beyond data. DO NOT fabricate facts, events, timestamps, or witness statements.
+3. If unknown or context does not contain enough information to answer → say exactly "Insufficient information available".
+4. When discussing conflicts, explain WHAT differs and BETWEEN WHICH witnesses.
 
-You are assisting a real investigator — accuracy is more important than
-appearing confident. Uncertainty is always better than fabrication.
+OUTPUT FORMAT:
+You must return valid JSON matching this schema:
+{
+  "answer": "Your detailed answer or 'Insufficient information available'",
+  "confidence": "low" | "medium" | "high",
+  "evidence": ["Exact timeline event or testimony snippet that proves your answer", "Another exact piece of evidence"]
+}
+If no evidence is available, return an empty array for evidence.
 """
 
 
@@ -146,12 +150,36 @@ async def chat(
     Answer the investigator's natural-language query strictly from the
     provided case context (timeline, conflicts, testimonies, report).
     Falls back to a keyword-based offline answer if the LLM is unavailable.
+
+    Safety guard: queries are screened before reaching the LLM.
+    Blocked queries are refused immediately; exploitative queries are
+    rewritten to ethical equivalents.
     """
+    # ── Safety gate ───────────────────────────────────────────────────────
+    safety_result, safe_query = evaluate_and_rewrite(body.query)
+
+    if safety_result.category == SafetyCategory.BLOCKED:
+        logger.warning(
+            "Chat query BLOCKED by safety layer",
+            reason=safety_result.reason,
+            query_preview=body.query[:80],
+        )
+        return ChatResponse(
+            answer=(
+                "⛔ This query has been blocked by the safety evaluation layer.\n\n"
+                f"**Reason:** {safety_result.reason}\n\n"
+                "The Narrative Merge Engine is designed for lawful investigation "
+                "assistance only. If you believe this is an error, please "
+                "rephrase your question."
+            ),
+            safety=safety_result.to_dict(),
+        )
+
     context_text = _build_context_block(body.context)
 
     user_prompt = (
         f"CASE CONTEXT:\n{context_text}\n\n"
-        f"INVESTIGATOR QUESTION:\n{body.query}"
+        f"INVESTIGATOR QUESTION:\n{safe_query}"
     )
 
     messages: list[LLMMessage] = [
@@ -161,13 +189,16 @@ async def chat(
 
     request = LLMRequest(
         messages=messages,
-        temperature=0.3,
+        temperature=0.1,  # Keep temperature low for deterministic JSON
         max_tokens=512,
+        extra={"response_format": {"type": "json_object"}}
     )
 
     logger.info(
         "Chat query received",
-        query_preview=body.query[:80],
+        query_preview=safe_query[:80],
+        safety_category=safety_result.category.value,
+        was_rewritten=safe_query != body.query,
         has_timeline=bool(body.context.timeline),
         has_conflicts=bool(body.context.conflicts),
         testimony_count=len(body.context.testimonies or []),
@@ -176,7 +207,26 @@ async def chat(
     try:
         response = await llm.complete(request, task_name="investigation_chat")
         logger.info("Chat response generated", response_length=len(response.content))
-        return ChatResponse(answer=response.content.strip())
+        
+        try:
+            import json
+            parsed = json.loads(response.content.strip())
+            answer = parsed.get("answer", "Insufficient information available")
+            confidence = parsed.get("confidence", "medium")
+            evidence = parsed.get("evidence", [])
+            if not isinstance(evidence, list):
+                evidence = []
+        except Exception:
+            answer = response.content.strip()
+            confidence = "low"
+            evidence = []
+            
+        return ChatResponse(
+            answer=answer,
+            confidence=confidence,
+            evidence=evidence,
+            safety=safety_result.to_dict() if safety_result.category != SafetyCategory.SAFE else None,
+        )
 
     except Exception as exc:
         logger.warning(
@@ -184,11 +234,10 @@ async def chat(
             error=str(exc)[:200],
         )
         # Graceful offline fallback: keyword-match against context text
-        answer = _offline_fallback(body.query, body.context, context_text)
-        return ChatResponse(answer=answer)
+        answer, confidence, evidence = _offline_fallback(safe_query, body.context, context_text)
+        return ChatResponse(answer=answer, confidence=confidence, evidence=evidence)
 
-
-def _offline_fallback(query: str, ctx: ChatContext, context_text: str) -> str:
+def _offline_fallback(query: str, ctx: ChatContext, context_text: str) -> tuple[str, str, list[str]]:
     """
     Keyword-based fallback when the LLM is unavailable.
     Searches the context block for relevant sentences and returns
@@ -216,12 +265,13 @@ def _offline_fallback(query: str, ctx: ChatContext, context_text: str) -> str:
     )
 
     if relevant:
-        body_text = "\n".join(f"• {l}" for l in relevant[:8])
+        body_text = "See evidence below."
+        confidence = "medium"
+        evidence = relevant[:8]
     else:
-        body_text = (
-            "No directly matching evidence found in the current context. "
-            "Try running the pipeline first or rephrasing your query."
-        )
+        body_text = "Insufficient information available"
+        confidence = "low"
+        evidence = []
 
-    return header + body_text
+    return header + body_text, confidence, evidence
 
