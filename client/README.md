@@ -1,89 +1,16 @@
-# Structured Testimony - Frontend Dashboard
+# React + Vite
 
-A production-grade React frontend built with Vite, TypeScript, and Tailwind CSS. This project follows a scalable, feature-based architecture (FSD-lite) designed for large-scale applications.
+This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
 
-## 🚀 Tech Stack
+Currently, two official plugins are available:
 
-- **Framework:** React 19 (TypeScript)
-- **Build Tool:** Vite 8
-- **Styling:** Tailwind CSS 4
-- **State Management:** Zustand 5
-- **Routing:** React Router 7
-- **Code Quality:** ESLint 9 + Prettier
+- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
+- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
 
-## 🏗️ Architecture
+## React Compiler
 
-The project follows a modular structure inside `src/`:
+The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
 
-- `app/`: Global configuration (providers, router, root layout, global store).
-- `features/`: Business-logic modules (e.g., `auth`, `forensics`, `cases`).
-- `pages/`: Route-level components.
-- `widgets/`: Compositional UI blocks (larger than components, smaller than pages).
-- `shared/`: Reusable primitives (UI components, hooks, utilities, types).
-- `assets/`: Static media (images, fonts).
-- `styles/`: Global CSS and Tailwind directives.
-- `config/`: App-wide constants and environment management.
+## Expanding the ESLint configuration
 
-## 🛠️ Getting Started
-
-### Prerequisites
-
-- Node.js (Latest LTS recommended)
-- npm or yarn
-
-### Installation
-
-```bash
-cd client
-npm install
-```
-
-### Development
-
-```bash
-npm run dev
-```
-
-### Production Build
-
-```bash
-npm run build
-```
-
-### Formatting & Linting
-
-```bash
-npm run format # Fix formatting with Prettier
-npm run lint   # Run ESLint checks
-```
-
-## 📐 Project Structure
-
-```text
-src/
-├── app/
-│   ├── layouts/
-│   ├── providers/
-│   ├── router/
-│   └── store/
-├── assets/
-├── config/
-├── features/
-├── pages/
-├── shared/
-│   ├── components/
-│   ├── hooks/
-│   ├── utils/
-│   └── types/
-├── styles/
-├── widgets/
-└── main.tsx
-```
-
-## 🔑 Environment Variables
-
-Copy `.env.example` to `.env` and fill in the values:
-
-```bash
-VITE_API_BASE_URL=http://localhost:3000
-```
+If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
