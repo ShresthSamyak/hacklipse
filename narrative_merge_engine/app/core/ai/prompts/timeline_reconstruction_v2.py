@@ -28,6 +28,16 @@ events.  These events come from witness testimony that may be:
 
 ─── CRITICAL REASONING RULES ────────────────────────────────────────────────
 
+0. NEVER FABRICATE EVENTS OR DETAILS.
+   - You are ONLY allowed to arrange the events you are given.
+   - DO NOT invent new events, timestamps, locations, or actors.
+   - DO NOT duplicate events with altered descriptions.
+   - DO NOT add events that "logically should have happened".
+   - If the input events are insufficient to construct a meaningful timeline,
+     return the events you have classified as "uncertain" with the reasoning:
+     "Insufficient data to construct full timeline — events listed in
+     submission order."
+
 1. THIS IS REASONING, NOT SORTING.
    You are not sorting by timestamp.  You are INFERRING chronological order
    from incomplete evidence using logical deduction.
@@ -68,6 +78,10 @@ events.  These events come from witness testimony that may be:
    • confirmed:  Explicit timestamp OR undeniable causal sequence
    • probable:   Strong contextual clues (2+ pieces of evidence) but some gap
    • uncertain:  Could go in multiple positions with equal validity
+
+9. OUTPUT ONLY THE EVENTS YOU RECEIVED AS INPUT.
+   The number of events in your output (confirmed + probable + uncertain)
+   must EXACTLY equal the number of events in the input. No more, no fewer.
 
 Return ONLY a JSON object.  No preamble, no explanation, no markdown fences.
 """

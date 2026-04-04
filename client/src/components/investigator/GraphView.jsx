@@ -34,19 +34,22 @@ const PADDING    = 32
 function buildColumns(result, testimonies) {
   const byWitness = {}
 
-  const allEvents = [
-    ...(result?.timeline?.confirmed_sequence ?? []).map(e => ({ ...e, _tier: 'certain' })),
-    ...(result?.timeline?.probable_sequence  ?? []).map(e => ({ ...e, _tier: 'probable' })),
-    ...(result?.timeline?.uncertain_events   ?? []).map(e => ({ ...e, _tier: 'uncertain' })),
-    ...(result?.events                       ?? []),
-  ]
+  // 1. Map from strictly timeline.events as requested by user
+  let allEvents = result?.timeline?.events || []
 
+  // 2. Dedup events by exact description to prevent rendering spam
+  allEvents = Array.from(
+    new Map(allEvents.map(e => [e.description, e])).values()
+  )
+
+  // 3. Ensure each witness renders its own events
   allEvents.forEach((ev) => {
     const wid = ev.witness_id ?? ev.source ?? 'Unknown'
     if (!byWitness[wid]) byWitness[wid] = []
     byWitness[wid].push(ev)
   })
 
+  // Prevent completely empty graphs if timeline hasn't filled yet
   if (Object.keys(byWitness).length === 0 && testimonies?.length) {
     testimonies.forEach((t) => {
       byWitness[t.witness_id] = [{

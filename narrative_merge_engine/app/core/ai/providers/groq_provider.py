@@ -73,7 +73,7 @@ class GroqProvider(BaseLLMProvider):
             api_key=self._api_key,
             base_url=_GROQ_BASE_URL,
             timeout=settings.LLM_TIMEOUT_SECONDS,
-            max_retries=0,  # retries handled by orchestrator's tenacity wrapper
+            max_retries=settings.LLM_MAX_RETRIES,  # Let SDK handle 429s intelligently
         )
 
     async def complete(self, request: LLMRequest) -> LLMResponse:

@@ -29,10 +29,21 @@ Testimonies may be:
   • Incomplete (trailing off, fragmented thoughts)
   • Self-contradictory (witness corrects themselves within the same statement)
 
-─── CRITICAL RULES ───────────────────────────────────────────────────────────
+─── STRICT RULES (ZERO TOLERANCE) ────────────────────────────────────────────
+
+0. ONLY EXTRACT EVENTS EXPLICITLY STATED IN THE TESTIMONY.
+   - DO NOT infer, fabricate, or imagine events that are not directly described.
+   - DO NOT add logical continuations (e.g. "must have left" when not stated).
+   - DO NOT repeat the same event with different phrasing.
+   - If you are unsure whether something is an event → mark it as "uncertain"
+     with low confidence instead of guessing.
+   - Every extracted event MUST be traceable to an exact text span in the
+     input testimony. If you cannot point to a verbatim quote, do not
+     extract the event.
 
 1. NEVER HALLUCINATE.  If the testimony says "around 9 or 10", you write
    "around 9 or 10".  You do NOT write "9:30 PM" or "21:00-22:00".
+   If information is not present, output null — never synthesize details.
 
 2. PRESERVE THE WITNESS'S LANGUAGE.  If they say "shayad raat ko",
    keep that in the time field: "shayad raat ko (maybe at night)".
@@ -47,19 +58,24 @@ Testimonies may be:
 
 5. MAP TO SOURCE TEXT.  The `source_text` field must be a VERBATIM
    substring of the input.  If the event spans a clause, quote that clause.
+   If you cannot find the exact text span, DO NOT create the event.
 
-6. ACTORS ARE DESCRIPTIVE.  Unknown people → "unidentified person",
+6. DO NOT REPEAT EVENTS.  Each unique action should appear exactly once.
+   If the witness mentions the same event twice (e.g. "I heard a noise...
+   that noise I mentioned"), extract it ONCE with the best source quote.
+
+7. ACTORS ARE DESCRIPTIVE.  Unknown people → "unidentified person",
    "someone", "ek aadmi".  Groups → "a group of people".
    Named individuals → use the name.
 
-7. CONFIDENCE IS CALIBRATED.  Score reflects extraction confidence:
+8. CONFIDENCE IS CALIBRATED.  Score reflects extraction confidence:
    • 0.9-1.0: Clear, unambiguous statement
    • 0.7-0.8: Minor ambiguity but intent is clear
    • 0.5-0.6: Significant hedging or fragmentation
    • 0.3-0.4: Highly uncertain, fragmented, or contradictory
    • 0.1-0.2: Barely intelligible, extreme uncertainty
 
-8. UNCERTAINTY_TYPE must be one of:
+9. UNCERTAINTY_TYPE must be one of:
    • "hedged" — witness uses words like "I think", "maybe", "shayad"
    • "approximate" — "around", "about", "lagbhag", "kareeb"
    • "relative" — "after that", "later", "pehle", "before the other thing"

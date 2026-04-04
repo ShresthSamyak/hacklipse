@@ -225,16 +225,23 @@ def _verify_source_text(event: ExtractedEvent, original_text: str) -> ExtractedE
 
 def _deduplicate_events(events: list[ExtractedEvent]) -> list[ExtractedEvent]:
     """
-    Remove near-duplicate events (same source_text and description).
-    Keeps the event with higher confidence.
+    Remove duplicate and near-duplicate events.
+
+    Two-pass approach:
+      1. Exact dedup: hash on normalised description + source_text.
+      2. Fuzzy dedup: SequenceMatcher on descriptions — if two events have
+         ≥85% similarity in their descriptions, the lower-confidence one
+         is dropped. This catches "same verb + object" rewording by the LLM.
+
+    Always keeps the event with higher confidence.
     """
     if len(events) <= 1:
         return events
 
+    # ── Pass 1: exact hash dedup ─────────────────────────────────────────
     seen_hashes: dict[str, ExtractedEvent] = {}
 
     for event in events:
-        # Hash on normalised description + source_text
         key = hashlib.md5(
             (event.description.lower().strip() + "|" + event.source_text.lower().strip()).encode()
         ).hexdigest()
@@ -243,21 +250,59 @@ def _deduplicate_events(events: list[ExtractedEvent]) -> list[ExtractedEvent]:
             existing = seen_hashes[key]
             if event.confidence > existing.confidence:
                 seen_hashes[key] = event
-                logger.debug("Duplicate replaced (higher confidence)", event_id=event.id)
+                logger.debug("Exact duplicate replaced (higher confidence)", event_id=event.id)
             else:
-                logger.debug("Duplicate dropped", event_id=event.id)
+                logger.debug("Exact duplicate dropped", event_id=event.id)
         else:
             seen_hashes[key] = event
 
-    deduped = list(seen_hashes.values())
-    if len(deduped) < len(events):
+    after_exact = list(seen_hashes.values())
+
+    # ── Pass 2: fuzzy near-duplicate removal ─────────────────────────────
+    _NEAR_DUP_THRESHOLD = 0.85
+    kept: list[ExtractedEvent] = []
+
+    for event in after_exact:
+        is_near_dup = False
+        desc_norm = event.description.lower().strip()
+
+        for i, existing in enumerate(kept):
+            existing_desc = existing.description.lower().strip()
+            ratio = SequenceMatcher(None, desc_norm, existing_desc).ratio()
+
+            if ratio >= _NEAR_DUP_THRESHOLD:
+                is_near_dup = True
+                if event.confidence > existing.confidence:
+                    logger.debug(
+                        "Near-duplicate replaced (higher confidence)",
+                        new_id=event.id,
+                        old_id=existing.id,
+                        similarity=round(ratio, 3),
+                    )
+                    kept[i] = event
+                else:
+                    logger.debug(
+                        "Near-duplicate dropped",
+                        event_id=event.id,
+                        matched_id=existing.id,
+                        similarity=round(ratio, 3),
+                    )
+                break
+
+        if not is_near_dup:
+            kept.append(event)
+
+    total_dropped = len(events) - len(kept)
+    if total_dropped > 0:
         logger.info(
             "Events deduplicated",
             before=len(events),
-            after=len(deduped),
-            dropped=len(events) - len(deduped),
+            after=len(kept),
+            dropped=total_dropped,
+            exact_dedup_dropped=len(events) - len(after_exact),
+            fuzzy_dedup_dropped=len(after_exact) - len(kept),
         )
-    return deduped
+    return kept
 
 
 def _recalibrate_confidence(events: list[ExtractedEvent]) -> list[ExtractedEvent]:
@@ -572,7 +617,10 @@ class EventExtractionService:
                 "1. Return ONLY a valid JSON array\n"
                 "2. Ensure every event has all required fields\n"
                 "3. Use the exact schema specified above\n"
-                "4. Ensure source_text is a verbatim quote from the testimony"
+                "4. Ensure source_text is a verbatim quote from the testimony\n"
+                "5. DO NOT fabricate, infer, or hallucinate events not in the text\n"
+                "6. DO NOT repeat the same event with different wording\n"
+                "7. If unsure, mark confidence as very low (0.1-0.2) rather than guessing"
             )
 
         messages: list[LLMMessage] = []

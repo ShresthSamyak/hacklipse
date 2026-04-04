@@ -122,6 +122,7 @@ class MultiWitnessResponse(BaseModel):
     """Structured response from the multi-witness pipeline."""
     pipeline_id: str
     mode: str
+    transcript: str                # combined string of all testimony texts
     testimonies: list[dict]        # [{witness_id, analysis, events}]
     timeline: dict
     conflicts: dict                # populated in investigator mode only
@@ -142,6 +143,7 @@ def _to_multi_response(result: PipelineResult) -> MultiWitnessResponse:
     return MultiWitnessResponse(
         pipeline_id=d["pipeline_id"],
         mode=d["mode"],
+        transcript=d["transcript"],
         testimonies=d["testimonies"],
         timeline=d["timeline"],
         conflicts=d["conflicts"],
@@ -381,6 +383,7 @@ async def get_sample(_user: CurrentUser) -> PipelineResponse:
                 {"event_id": "a3", "description": "Heard a loud noise", "position": 2, "placement_confidence": "confirmed"},
             ],
             "uncertain_events": [],
+            "events": sample_events,
             "event_count": len(sample_events),
             "confidence_summary": {"confirmed": 0, "probable": 3, "uncertain": 0},
             "temporal_links": [],

@@ -14,7 +14,7 @@ const api = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
-  timeout: 90_000, // 90 s — LLM calls can be slow
+  timeout: 180_000, // 3 mins — LLM calls + native SDK backoff can take a while
 })
 
 // ── Response interceptor (uniform error shape) ─────────────────────────────────

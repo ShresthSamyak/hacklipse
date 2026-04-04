@@ -10,6 +10,7 @@ import Badge from '../components/ui/Badge'
 import { getDemoSample, checkHealth } from '../services/api'
 import { runInvestigation } from '../shared/api/investigatorService'
 import GraphView from '../components/investigator/GraphView'
+import ChatPanel from '../components/investigator/ChatPanel'
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -118,12 +119,14 @@ export default function InvestigatorPage() {
     }
 
     setLoading(true)
+    setResult(null) // Prevent mixing with old runs
     try {
       setSentTestimonies(testimonies)
       const data = await runInvestigation({
         testimonies,
         mode: "investigator"
       })
+      console.log("NEW PIPELINE RUN:", data.pipeline_id)
       setResult(data)
       localStorage.setItem('lastPipelineResult', JSON.stringify(data))
     } catch (err) {
@@ -293,14 +296,53 @@ export default function InvestigatorPage() {
               </div>
             )}
 
-            {/* Analysis Summary (Report) */}
+            {/* Analysis Summary (Detailed Report) */}
             {result?.report?.summary && (
               <div className="mt-6 bg-[#FBE8CE] border border-amber-200 rounded-xl p-5 text-sm text-gray-800 shadow-sm">
                 <p className="font-semibold text-amber-700 mb-2 text-base font-serif-display">
                   <i className="fas fa-file-alt mr-2" />
-                  Investigation Summary
+                  Investigation Detailed Report
                 </p>
-                <p className="leading-relaxed">{result.report.summary}</p>
+                <div className="space-y-4">
+                  <p className="leading-relaxed">{result.report.summary}</p>
+                  
+                  {result.report.key_events?.length > 0 && (
+                    <div>
+                      <strong className="text-amber-800">Key Events:</strong>
+                      <ul className="list-disc pl-5 mt-1 space-y-1">
+                        {result.report.key_events.map((ke, idx) => (
+                          <li key={idx} className="leading-relaxed">{ke}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {result.report.emotional_analysis && (
+                       <div className="bg-white/50 p-3 rounded border border-amber-100">
+                         <strong className="text-amber-800 block mb-1">Emotion Analysis</strong>
+                         <p>{result.report.emotional_analysis}</p>
+                       </div>
+                    )}
+                    {result.report.uncertainty_analysis && (
+                       <div className="bg-white/50 p-3 rounded border border-amber-100">
+                         <strong className="text-amber-800 block mb-1">Uncertainty Context</strong>
+                         <p>{result.report.uncertainty_analysis}</p>
+                       </div>
+                    )}
+                  </div>
+
+                  {result.report.recommended_next_steps?.length > 0 && (
+                    <div>
+                      <strong className="text-amber-800">Recommended Next Steps:</strong>
+                      <ul className="list-disc pl-5 mt-1 space-y-1">
+                        {result.report.recommended_next_steps.map((ns, idx) => (
+                          <li key={idx} className="leading-relaxed">{ns}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
           </header>
@@ -382,7 +424,17 @@ export default function InvestigatorPage() {
 
           {/* ── Testimony Divergence Graph ── */}
           <section aria-label="Testimony Divergence Graph" className="mt-8">
-            <GraphView result={result} testimonies={sentTestimonies} />
+            <GraphView key={result?.pipeline_id || 'empty-graph'} result={result} testimonies={sentTestimonies} />
+          </section>
+
+          {/* ── Investigation Chat ── */}
+          <section aria-label="Investigation Assistant" className="mt-8">
+            <h3 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-3 font-serif-display">
+              <i className="fas fa-comments text-[#9AB17A]" aria-hidden="true" />
+              Investigation Assistant
+              <span className="ml-auto text-xs font-mono-code text-gray-500 font-normal">Ask questions about the case</span>
+            </h3>
+            <ChatPanel result={result} />
           </section>
 
           {/* ── Raw transcript (collapsible) ── */}

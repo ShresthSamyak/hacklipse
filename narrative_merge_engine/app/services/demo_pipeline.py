@@ -80,12 +80,13 @@ logger = get_logger(__name__)
 # ─── Stage timeouts (seconds) ────────────────────────────────────────────────
 
 _TIMEOUT_STT = 20          # Whisper is fast; generous margin for network
-_TIMEOUT_EXTRACTION = 15   # 70B model; worst-case long testimony
-_TIMEOUT_TIMELINE = 15     # reasoning can be verbose
-_TIMEOUT_CONFLICTS = 12    # strict mode is lean (temp=0, max 4096 tokens)
+_TIMEOUT_EXTRACTION = 25   # 70B model; extended to allow SDK native retries
+_TIMEOUT_TIMELINE = 20     # reasoning can be verbose
+_TIMEOUT_CONFLICTS = 18    # strict mode is lean
 
-# Retry budget: one extra attempt on timeout before fallback
-_MAX_TIMEOUT_RETRIES = 1
+# Retry budget: 0 extra attempts. 
+# (The Groq SDK itself handles exponential backoff for 429/503 errors natively)
+_MAX_TIMEOUT_RETRIES = 0
 
 
 # ─── Pipeline status ─────────────────────────────────────────────────────────
@@ -924,19 +925,19 @@ class DemoPipeline:
 
 def _text_to_fallback_events(text: str) -> list[ExtractedEvent]:
     """
-    Last-resort fallback: treat the entire text as one uncertain event.
-    Better than returning nothing — at least something flows to the next stage.
+    Last-resort fallback: create a single uncertain event that transparently
+    signals extraction failure instead of fabricating events.
     """
     return [
         ExtractedEvent(
             id=str(uuid.uuid4()),
-            description=text[:300].strip() or "Unprocessed testimony",
+            description="Insufficient data to construct full timeline",
             time=None,
-            time_uncertainty="extraction failed",
+            time_uncertainty="extraction failed — original testimony preserved below",
             location=None,
             actors=[],
-            confidence=0.3,
-            source_text=text[:300],
+            confidence=0.1,
+            source_text=text[:300].strip() or "(empty testimony)",
         )
     ]
 
@@ -998,6 +999,7 @@ def _timeline_to_dict(timeline: TimelineReconstructionResult) -> dict:
             "probable":  len(timeline.probable_sequence),
             "uncertain": len(timeline.uncertain_events),
         },
+        "events":             [e.model_dump() for e in timeline.full_sequence],
         "temporal_links": [l.model_dump() for l in timeline.temporal_links],
         "metadata": timeline.reconstruction_metadata,
     }
@@ -1013,6 +1015,10 @@ def _build_trivial_timeline(events: list[dict]) -> dict:
             for i, e in enumerate(events)
         ],
         "full_sequence": [
+            {"event_id": e.get("id", ""), "description": e.get("description", ""), "position": i}
+            for i, e in enumerate(events)
+        ],
+        "events": [
             {"event_id": e.get("id", ""), "description": e.get("description", ""), "position": i}
             for i, e in enumerate(events)
         ],
