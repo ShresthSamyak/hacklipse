@@ -172,7 +172,6 @@ async def run_pipeline_audio(
     db: DBDep,
     llm: LLMDep,
     stt_svc: SttSvc,
-    _user: CurrentUser,
     file: UploadFile | None = File(default=None, description="Optional audio file"),
     text: str = Form(default="", description="Fallback text if no audio provided"),
     mode: str = Form(default="investigator"),
@@ -216,7 +215,6 @@ async def run_pipeline_text(
     db: DBDep,
     llm: LLMDep,
     stt_svc: SttSvc,
-    _user: CurrentUser,
 ) -> PipelineResponse:
     pipeline = build_pipeline(db=db, llm=llm, stt_svc=stt_svc)
     pipeline_mode = PipelineMode(payload.mode) if payload.mode in ("survivor", "investigator") else PipelineMode.INVESTIGATOR
@@ -246,7 +244,6 @@ async def run_preview(
     db: DBDep,
     llm: LLMDep,
     stt_svc: SttSvc,
-    _user: CurrentUser,
 ) -> PipelineResponse:
     pipeline = build_pipeline(db=db, llm=llm, stt_svc=stt_svc)
     pipeline_mode = PipelineMode(payload.mode) if payload.mode in ("survivor", "investigator") else PipelineMode.INVESTIGATOR
@@ -278,7 +275,6 @@ async def run_pipeline_multi(
     db: DBDep,
     llm: LLMDep,
     stt_svc: SttSvc,
-    _user: CurrentUser,
 ) -> MultiWitnessResponse:
     """
     Multi-witness pipeline endpoint.
@@ -319,7 +315,7 @@ async def run_pipeline_multi(
         "Zero latency. Use as a demo backup if the LLM API is unavailable."
     ),
 )
-async def get_sample(_user: CurrentUser) -> PipelineResponse:
+async def get_sample() -> PipelineResponse:
     """
     Returns the hardcoded 2-witness sample scenario.
     Useful as a demo backup when the API key is rate-limited or unavailable.
@@ -400,7 +396,7 @@ async def get_sample(_user: CurrentUser) -> PipelineResponse:
     summary="Pipeline health check",
     status_code=status.HTTP_200_OK,
 )
-async def demo_health(_user: CurrentUser) -> dict:
+async def demo_health() -> dict:
     """Confirms all services the pipeline depends on can be imported and instantiated."""
     checks: dict[str, str] = {}
 
